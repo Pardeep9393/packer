@@ -84,6 +84,18 @@
     font-family:'Space Grotesk',sans-serif; font-weight:600;
   }
   #monthFilter:hover{ border-color:var(--process); }
+  #globalDateFilter{
+    background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:8px 12px; border-radius:20px; font-size:12px; cursor:pointer;
+    font-family:'JetBrains Mono',monospace; font-weight:600;
+  }
+  #globalDateFilter:hover{ border-color:var(--process); }
+  #downloadBtn{
+    background:var(--panel); border:1px solid var(--border); color:var(--closed);
+    padding:8px 14px; border-radius:20px; font-size:12px; cursor:pointer;
+    font-family:'Space Grotesk',sans-serif; font-weight:600;
+  }
+  #downloadBtn:hover{ border-color:var(--closed); background:var(--closed-bg); }
 
   /* KPI strip */
   .kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
@@ -180,6 +192,8 @@
   </div>
   <div class="header-right">
     <select id="monthFilter" title="Filter dashboard by month"><option value="">All months</option></select>
+    <select id="globalDateFilter" title="Filter dashboard by date"><option value="">All dates</option></select>
+    <button id="downloadBtn" title="Download current view as CSV">⬇ Download</button>
     <div class="sync-pill"><span class="dot-live"></span><span id="syncText">syncing…</span></div>
     <button id="refreshBtn">↻ Refresh</button>
     <div class="clock">
@@ -368,6 +382,7 @@ async function loadData(){
     banner.style.display = 'none';
     syncText.textContent = 'live · ' + new Date().toLocaleTimeString('en-IN');
     populateMonthFilter();
+    populateGlobalDateFilter();
     render();
   }catch(err){
     banner.style.display = 'block';
@@ -384,10 +399,51 @@ function populateMonthFilter(){
   if(keys.includes(current)) sel.value = current;
 }
 
+function populateGlobalDateFilter(){
+  const sel = document.getElementById('globalDateFilter');
+  const current = sel.value;
+  const monthVal = document.getElementById('monthFilter').value;
+  const scoped = monthVal ? rows.filter(r=>r.monthKey===monthVal) : rows;
+  const order = new Map();
+  scoped.forEach(r=>{ if(r.createDT) order.set(r.dateKey, r.createDT); });
+  const keys = Array.from(order.keys()).sort((a,b)=>order.get(b)-order.get(a));
+  sel.innerHTML = `<option value="">All dates</option>` + keys.map(k=>`<option value="${k}">${k}</option>`).join('');
+  if(keys.includes(current)) sel.value = current;
+}
+
 function getRows(){
   const m = document.getElementById('monthFilter').value;
-  if(!m) return rows;
-  return rows.filter(r=>r.monthKey===m);
+  const d = document.getElementById('globalDateFilter').value;
+  let out = rows;
+  if(m) out = out.filter(r=>r.monthKey===m);
+  if(d) out = out.filter(r=>r.dateKey===d);
+  return out;
+}
+
+function downloadCSV(){
+  const list = getRows();
+  const header = ['Batch','Date','Status','Channel','Pick List Type','Orders','Qty','Picker','Shift','Assign Time','Complete Time','Duration (min)'];
+  const esc = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const lines = [header.map(esc).join(',')];
+  for(const r of list){
+    const durMin = (r.assignDT && r.completeDT) ? Math.round((r.completeDT - r.assignDT)/60000) : '';
+    lines.push([
+      r.batch, r.dateKey, r.status, r.channel, r.pickListType, r.orders, r.qty,
+      r.picker, r.shift, r.assignDT?fmtDT(r.assignDT):'', r.completeDT?fmtDT(r.completeDT):'', durMin
+    ].map(esc).join(','));
+  }
+  const blob = new Blob(["\ufeff" + lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const monthVal = document.getElementById('monthFilter').value;
+  const dateVal = document.getElementById('globalDateFilter').value;
+  const suffix = dateVal ? dateVal.replace(/\//g,'-') : (monthVal || 'all');
+  a.href = url;
+  a.download = `picker-batches-${suffix}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function render(){
@@ -533,7 +589,9 @@ document.getElementById('closedSearch').addEventListener('input', ()=>{ closedRe
 document.getElementById('dateFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; renderClosed(); });
 document.getElementById('loadMoreClosed').addEventListener('click', ()=>{ closedRenderLimit += CLOSED_PAGE; renderClosed(); });
 document.getElementById('refreshBtn').addEventListener('click', loadData);
-document.getElementById('monthFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
+document.getElementById('monthFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; populateGlobalDateFilter(); render(); });
+document.getElementById('globalDateFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
+document.getElementById('downloadBtn').addEventListener('click', downloadCSV);
 
 function tickClock(){
   const now = new Date();
