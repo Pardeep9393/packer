@@ -100,6 +100,12 @@
     font-family:'IBM Plex Mono',monospace; font-weight:600;
   }
   #globalDateFilter:hover{ border-color:var(--process); }
+  #channelFilter{
+    background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:8px 12px; border-radius:4px; font-size:12px; cursor:pointer;
+    font-family:'Barlow',sans-serif; font-weight:600;
+  }
+  #channelFilter:hover{ border-color:var(--process); }
   #downloadBtn{
     background:var(--panel); border:1px solid var(--border); color:var(--closed);
     padding:8px 14px; border-radius:4px; font-size:12px; cursor:pointer;
@@ -155,7 +161,7 @@
 
   /* Departure-board style rows for in-process */
   .board-row{
-    display:grid; grid-template-columns:110px 1fr 110px 90px 120px 90px; gap:10px;
+    display:grid; grid-template-columns:110px 1fr 70px 110px 90px 120px 90px; gap:10px;
     align-items:center; padding:11px 14px; border-bottom:1px solid rgba(255,255,255,0.04);
     font-size:13px;
   }
@@ -190,7 +196,7 @@
   @media (max-width:900px){
     .kpis{ grid-template-columns:repeat(2,1fr); }
     .board-row{ grid-template-columns:90px 1fr 90px; }
-    .board-row .col-channel, .board-row .col-shift, .board-row .col-assign{ display:none; }
+    .board-row .col-channel, .board-row .col-shift, .board-row .col-assign, .board-row .col-qty{ display:none; }
   }
   @media (prefers-reduced-motion: reduce){
     .dot-live, .status-dot.process, .status-dot.danger{ animation:none; }
@@ -211,6 +217,7 @@
     <input type="text" id="globalSearch" placeholder="🔎 Search batch / picker…">
     <select id="monthFilter" title="Filter dashboard by month"><option value="">All months</option></select>
     <select id="globalDateFilter" title="Filter dashboard by date"><option value="">All dates</option></select>
+    <select id="channelFilter" title="Filter dashboard by channel"><option value="">All channels</option></select>
     <button id="downloadBtn" title="Download current view as CSV">⬇ Download</button>
     <div class="sync-pill"><span class="dot-live"></span><span id="syncText">syncing…</span></div>
     <button id="refreshBtn">↻ Refresh</button>
@@ -239,7 +246,7 @@
       <table>
         <thead>
           <tr>
-            <th>Date</th><th>Created</th><th>Closed</th><th>Under Process</th><th>Open</th><th>Close Rate</th>
+            <th>Date</th><th>Created</th><th>Qty</th><th>Closed</th><th>Under Process</th><th>Open</th><th>Close Rate</th>
           </tr>
         </thead>
         <tbody id="dateSummaryBody"></tbody>
@@ -254,7 +261,7 @@
   </div>
   <div class="panel">
     <div class="board-row head">
-      <div>Batch</div><div>Picker / Channel</div><div class="col-shift">Shift</div><div class="col-assign">Assign Time</div><div>Since</div><div>Elapsed</div>
+      <div>Batch</div><div>Picker / Channel</div><div class="col-qty">Qty</div><div class="col-shift">Shift</div><div class="col-assign">Assign Time</div><div>Since</div><div>Elapsed</div>
     </div>
     <div class="scroll-y" id="processBoard"></div>
   </div>
@@ -281,7 +288,7 @@
   <div class="panel">
     <div class="scroll-y" style="max-height:460px;">
       <table>
-        <thead><tr><th>Batch</th><th>Date</th><th>Picker</th><th>Channel</th><th>Assign</th><th>Complete</th><th>Duration</th></tr></thead>
+        <thead><tr><th>Batch</th><th>Date</th><th>Picker</th><th>Channel</th><th>Qty</th><th>Assign</th><th>Complete</th><th>Duration</th></tr></thead>
         <tbody id="closedBody"></tbody>
       </table>
     </div>
@@ -297,6 +304,7 @@ const GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx
 let rows = []; // parsed batch objects
 let closedRenderLimit = 60;
 const CLOSED_PAGE = 60;
+let didInitialDateSelect = false;
 
 function cellText(c){
   if(!c) return '';
@@ -372,7 +380,9 @@ async function loadData(){
 
       const assignDT = parseDT(assignRaw);
       const completeDT = parseDT(completeRaw);
-      let createDT = parseDT(pickerDateRaw) || assignDT || parseDT(sheetDateRaw);
+      // If no create date is available from any column, default to today so the batch
+      // still shows up under today's date instead of being lost in an 'Unknown' bucket.
+      let createDT = parseDT(pickerDateRaw) || assignDT || parseDT(sheetDateRaw) || new Date();
 
       let status;
       if(!assignDT) status = 'open';
@@ -398,6 +408,13 @@ async function loadData(){
     syncText.textContent = 'live · ' + new Date().toLocaleTimeString('en-IN');
     populateMonthFilter();
     populateGlobalDateFilter();
+    populateChannelFilter();
+    if(!didInitialDateSelect){
+      didInitialDateSelect = true;
+      const sel = document.getElementById('globalDateFilter');
+      const tk = dateKey(new Date());
+      if(Array.from(sel.options).some(o=>o.value===tk)) sel.value = tk;
+    }
     render();
   }catch(err){
     banner.style.display = 'block';
@@ -426,6 +443,14 @@ function populateGlobalDateFilter(){
   if(keys.includes(current)) sel.value = current;
 }
 
+function populateChannelFilter(){
+  const sel = document.getElementById('channelFilter');
+  const current = sel.value;
+  const channels = Array.from(new Set(rows.map(r=>r.channel).filter(Boolean))).sort();
+  sel.innerHTML = `<option value="">All channels</option>` + channels.map(c=>`<option value="${c}">${c}</option>`).join('');
+  if(channels.includes(current)) sel.value = current;
+}
+
 function searchMatch(r, q){
   if(!q) return true;
   return r.batch.toLowerCase().includes(q) || r.picker.toLowerCase().includes(q);
@@ -434,18 +459,24 @@ function searchMatch(r, q){
 function getRows(){
   const m = document.getElementById('monthFilter').value;
   const d = document.getElementById('globalDateFilter').value;
+  const ch = document.getElementById('channelFilter').value;
   const q = document.getElementById('globalSearch').value.trim().toLowerCase();
   let out = rows;
   if(m) out = out.filter(r=>r.monthKey===m);
   if(d) out = out.filter(r=>r.dateKey===d);
+  if(ch) out = out.filter(r=>r.channel===ch);
   if(q) out = out.filter(r=>searchMatch(r, q));
   return out;
 }
 
 function getSummaryRows(){
-  // Date-wise summary always covers the full history — only search narrows it, Month/Date filter does not.
+  // Date-wise summary always covers the full history — only Search and the Channel master filter narrow it, Month/Date filter does not.
+  const ch = document.getElementById('channelFilter').value;
   const q = document.getElementById('globalSearch').value.trim().toLowerCase();
-  return q ? rows.filter(r=>searchMatch(r, q)) : rows;
+  let out = rows;
+  if(ch) out = out.filter(r=>r.channel===ch);
+  if(q) out = out.filter(r=>searchMatch(r, q));
+  return out;
 }
 
 function downloadCSV(){
@@ -498,10 +529,11 @@ function renderDateSummary(){
   const map = new Map();
   for(const r of getSummaryRows()){
     const k = r.dateKey;
-    if(!map.has(k)) map.set(k, {created:0, closed:0, process:0, open:0, sortDT: r.createDT});
+    if(!map.has(k)) map.set(k, {created:0, closed:0, process:0, open:0, qty:0, sortDT: r.createDT});
     const e = map.get(k);
     e.created++;
     e[r.status]++;
+    e.qty += (parseFloat(r.qty) || 0);
     if(r.createDT && (!e.sortDT || r.createDT > e.sortDT)) e.sortDT = r.createDT;
   }
   const entries = Array.from(map.entries()).sort((a,b)=>{
@@ -510,12 +542,13 @@ function renderDateSummary(){
     return (b[1].sortDT||0) - (a[1].sortDT||0);
   });
   const tbody = document.getElementById('dateSummaryBody');
-  if(entries.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty">No data yet</td></tr>`; return; }
+  if(entries.length===0){ tbody.innerHTML = `<tr><td colspan="7" class="empty">No data yet</td></tr>`; return; }
   tbody.innerHTML = entries.map(([date, e])=>{
     const rate = e.created ? Math.round((e.closed/e.created)*100) : 0;
     return `<tr>
       <td class="num">${date}</td>
       <td class="num">${e.created}</td>
+      <td class="num">${e.qty}</td>
       <td class="num"><span class="badge b-closed">${e.closed}</span></td>
       <td class="num"><span class="badge b-process">${e.process}</span></td>
       <td class="num"><span class="badge b-open">${e.open}</span></td>
@@ -535,6 +568,7 @@ function renderProcessBoard(){
     return `<div class="board-row" data-assign="${r.assignDT.getTime()}">
       <div class="batch"><span class="status-dot ${isLong?'danger':'process'}"></span>${r.batch}</div>
       <div>${r.picker} <span style="color:var(--text-faint)">· ${r.channel||'—'}</span></div>
+      <div class="col-qty num" style="color:var(--text-dim)">${r.qty||'—'}</div>
       <div class="col-shift mono" style="color:var(--text-dim)">${r.shift}</div>
       <div class="col-assign mono" style="color:var(--text-dim)">${fmtDT(r.assignDT)}</div>
       <div class="mono" style="color:var(--text-dim)">since assign</div>
@@ -579,7 +613,7 @@ function renderClosed(){
   document.getElementById('closedCount').textContent = `(${list.length})`;
   const tbody = document.getElementById('closedBody');
   const loadMoreBtn = document.getElementById('loadMoreClosed');
-  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="7" class="empty">Koi closed batch nahi mila</td></tr>`; loadMoreBtn.style.display='none'; return; }
+  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="8" class="empty">Koi closed batch nahi mila</td></tr>`; loadMoreBtn.style.display='none'; return; }
   const shown = list.slice(0, closedRenderLimit);
   tbody.innerHTML = shown.map(r=>{
     const durMs = r.completeDT - r.assignDT;
@@ -588,6 +622,7 @@ function renderClosed(){
       <td class="num">${r.dateKey}</td>
       <td>${r.picker}</td>
       <td>${r.channel||'—'}</td>
+      <td class="num">${r.qty||'—'}</td>
       <td class="mono" style="color:var(--text-dim)">${fmtDT(r.assignDT)}</td>
       <td class="mono" style="color:var(--text-dim)">${fmtDT(r.completeDT)}</td>
       <td class="num"><span class="badge b-closed">${fmtDuration(durMs)}</span></td>
@@ -600,6 +635,7 @@ document.getElementById('loadMoreClosed').addEventListener('click', ()=>{ closed
 document.getElementById('refreshBtn').addEventListener('click', loadData);
 document.getElementById('monthFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; populateGlobalDateFilter(); render(); });
 document.getElementById('globalDateFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
+document.getElementById('channelFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
 document.getElementById('globalSearch').addEventListener('input', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
 document.getElementById('downloadBtn').addEventListener('click', downloadCSV);
 
