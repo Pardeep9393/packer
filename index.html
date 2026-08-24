@@ -78,6 +78,12 @@
   }
   #refreshBtn:hover{ border-color:var(--process); color:var(--process); }
   #refreshBtn:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible{ outline:2px solid var(--process); outline-offset:2px; }
+  #monthFilter{
+    background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:8px 12px; border-radius:20px; font-size:12px; cursor:pointer;
+    font-family:'Space Grotesk',sans-serif; font-weight:600;
+  }
+  #monthFilter:hover{ border-color:var(--process); }
 
   /* KPI strip */
   .kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
@@ -173,6 +179,7 @@
     </div>
   </div>
   <div class="header-right">
+    <select id="monthFilter" title="Filter dashboard by month"><option value="">All months</option></select>
     <div class="sync-pill"><span class="dot-live"></span><span id="syncText">syncing…</span></div>
     <button id="refreshBtn">↻ Refresh</button>
     <div class="clock">
@@ -288,6 +295,16 @@ function dateKey(dt){
   return `${d}/${m}/${y}`;
 }
 
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function monthKey(dt){
+  if(!dt) return null;
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`;
+}
+function monthLabel(key){
+  const [y, m] = key.split('-');
+  return `${MONTH_NAMES[+m-1]} ${y}`;
+}
+
 function fmtDT(dt){
   if(!dt) return '—';
   const p = n => String(n).padStart(2,'0');
@@ -343,18 +360,34 @@ async function loadData(){
         shift: cellText(c[8]) || '—',
         assignDT, completeDT, createDT,
         dateKey: createDT ? dateKey(createDT) : 'Unknown',
+        monthKey: createDT ? monthKey(createDT) : null,
         status
       });
     }
     rows = out;
     banner.style.display = 'none';
     syncText.textContent = 'live · ' + new Date().toLocaleTimeString('en-IN');
+    populateMonthFilter();
     render();
   }catch(err){
     banner.style.display = 'block';
     banner.textContent = 'Sheet se data load nahi ho paya: ' + err.message + '. Sheet ka sharing "Anyone with link – Viewer" pe check kar lo.';
     syncText.textContent = 'sync failed';
   }
+}
+
+function populateMonthFilter(){
+  const sel = document.getElementById('monthFilter');
+  const current = sel.value;
+  const keys = Array.from(new Set(rows.map(r=>r.monthKey).filter(Boolean))).sort().reverse();
+  sel.innerHTML = `<option value="">All months</option>` + keys.map(k=>`<option value="${k}">${monthLabel(k)}</option>`).join('');
+  if(keys.includes(current)) sel.value = current;
+}
+
+function getRows(){
+  const m = document.getElementById('monthFilter').value;
+  if(!m) return rows;
+  return rows.filter(r=>r.monthKey===m);
 }
 
 function render(){
@@ -367,10 +400,11 @@ function render(){
 }
 
 function renderKPIs(){
-  const total = rows.length;
-  const open = rows.filter(r=>r.status==='open').length;
-  const process = rows.filter(r=>r.status==='process').length;
-  const closed = rows.filter(r=>r.status==='closed').length;
+  const scoped = getRows();
+  const total = scoped.length;
+  const open = scoped.filter(r=>r.status==='open').length;
+  const process = scoped.filter(r=>r.status==='process').length;
+  const closed = scoped.filter(r=>r.status==='closed').length;
   document.getElementById('kpiTotal').textContent = total;
   document.getElementById('kpiOpen').textContent = open;
   document.getElementById('kpiProcess').textContent = process;
@@ -379,7 +413,7 @@ function renderKPIs(){
 
 function renderDateSummary(){
   const map = new Map();
-  for(const r of rows){
+  for(const r of getRows()){
     const k = r.dateKey;
     if(!map.has(k)) map.set(k, {created:0, closed:0, process:0, open:0, sortDT: r.createDT});
     const e = map.get(k);
@@ -408,7 +442,7 @@ function renderDateSummary(){
 }
 
 function renderProcessBoard(){
-  const list = rows.filter(r=>r.status==='process').sort((a,b)=>(a.assignDT||0)-(b.assignDT||0));
+  const list = getRows().filter(r=>r.status==='process').sort((a,b)=>(a.assignDT||0)-(b.assignDT||0));
   document.getElementById('processCount').textContent = `(${list.length})`;
   const el = document.getElementById('processBoard');
   if(list.length===0){ el.innerHTML = `<div class="empty">Koi batch under process nahi hai</div>`; return; }
@@ -442,7 +476,7 @@ function tickElapsed(){
 }
 
 function renderOpen(){
-  const list = rows.filter(r=>r.status==='open');
+  const list = getRows().filter(r=>r.status==='open');
   document.getElementById('openCount').textContent = `(${list.length})`;
   const tbody = document.getElementById('openBody');
   if(list.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty">Sab batches assign ho chuke hain</td></tr>`; return; }
@@ -459,13 +493,10 @@ function renderOpen(){
 function populateDateFilter(){
   const sel = document.getElementById('dateFilter');
   const current = sel.value;
-  const dates = Array.from(new Set(rows.filter(r=>r.status==='closed').map(r=>r.dateKey))).sort((a,b)=>{
-    const da = parseDT(a.split('/').reverse().join('-')) ;
-    return 0;
-  });
-  // simpler: sort by underlying createDT desc using a map
+  const scoped = getRows();
+  const dates = Array.from(new Set(scoped.filter(r=>r.status==='closed').map(r=>r.dateKey)));
   const dateOrder = new Map();
-  rows.forEach(r=>{ if(r.status==='closed' && r.createDT) dateOrder.set(r.dateKey, r.createDT); });
+  scoped.forEach(r=>{ if(r.status==='closed' && r.createDT) dateOrder.set(r.dateKey, r.createDT); });
   const sorted = dates.sort((a,b)=>(dateOrder.get(b)||0)-(dateOrder.get(a)||0));
   sel.innerHTML = `<option value="">All dates</option>` + sorted.map(d=>`<option value="${d}">${d}</option>`).join('');
   if(sorted.includes(current)) sel.value = current;
@@ -474,7 +505,7 @@ function populateDateFilter(){
 function renderClosed(){
   const search = document.getElementById('closedSearch').value.trim().toLowerCase();
   const dateFilter = document.getElementById('dateFilter').value;
-  let list = rows.filter(r=>r.status==='closed');
+  let list = getRows().filter(r=>r.status==='closed');
   if(dateFilter) list = list.filter(r=>r.dateKey===dateFilter);
   if(search) list = list.filter(r=> r.batch.toLowerCase().includes(search) || r.picker.toLowerCase().includes(search));
   list = list.sort((a,b)=>(b.completeDT||0)-(a.completeDT||0));
@@ -502,6 +533,7 @@ document.getElementById('closedSearch').addEventListener('input', ()=>{ closedRe
 document.getElementById('dateFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; renderClosed(); });
 document.getElementById('loadMoreClosed').addEventListener('click', ()=>{ closedRenderLimit += CLOSED_PAGE; renderClosed(); });
 document.getElementById('refreshBtn').addEventListener('click', loadData);
+document.getElementById('monthFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
 
 function tickClock(){
   const now = new Date();
