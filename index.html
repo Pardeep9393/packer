@@ -106,6 +106,13 @@
     font-family:'Barlow',sans-serif; font-weight:600; text-transform:uppercase; letter-spacing:0.4px;
   }
   #downloadBtn:hover{ border-color:var(--closed); background:var(--closed-bg); }
+  #globalSearch{
+    background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:8px 12px; border-radius:4px; font-size:12.5px; width:210px;
+    font-family:'Barlow',sans-serif;
+  }
+  #globalSearch::placeholder{ color:var(--text-faint); }
+  #globalSearch:focus{ border-color:var(--process); }
 
   /* KPI strip */
   .kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
@@ -201,6 +208,7 @@
     </div>
   </div>
   <div class="header-right">
+    <input type="text" id="globalSearch" placeholder="🔎 Search batch / picker…">
     <select id="monthFilter" title="Filter dashboard by month"><option value="">All months</option></select>
     <select id="globalDateFilter" title="Filter dashboard by date"><option value="">All dates</option></select>
     <button id="downloadBtn" title="Download current view as CSV">⬇ Download</button>
@@ -217,7 +225,7 @@
 
 <section class="kpis" id="kpiStrip">
   <div class="kpi k-total"><div class="label">Total Batches Created</div><div class="value mono" id="kpiTotal">–</div><div class="foot" id="kpiTotalFoot">all dates</div></div>
-  <div class="kpi k-open"><div class="label">Open (Not Started)</div><div class="value mono" id="kpiOpen">–</div><div class="foot">assign time pending · all dates</div></div>
+  <div class="kpi k-open"><div class="label">Open (Not Started)</div><div class="value mono" id="kpiOpen">–</div><div class="foot">assign time pending</div></div>
   <div class="kpi k-process"><div class="label">Under Process</div><div class="value mono" id="kpiProcess">–</div><div class="foot">picking in progress</div></div>
   <div class="kpi k-closed"><div class="label">Closed</div><div class="value mono" id="kpiClosed">–</div><div class="foot">picking complete</div></div>
 </section>
@@ -255,7 +263,6 @@
 <section>
   <div class="section-head">
     <h2>Open — Not Yet Assigned <span class="count" id="openCount">(0)</span></h2>
-    <div style="font-size:11.5px; color:var(--text-faint);">Always shows all pending batches — not affected by Month/Date filter</div>
   </div>
   <div class="panel">
     <div class="scroll-y">
@@ -270,10 +277,6 @@
 <section>
   <div class="section-head">
     <h2>Closed — Batch-wise Closing Time <span class="count" id="closedCount">(0)</span></h2>
-    <div class="toolbar">
-      <input type="text" id="closedSearch" placeholder="Search batch / picker…">
-      <select id="dateFilter"><option value="">All dates</option></select>
-    </div>
   </div>
   <div class="panel">
     <div class="scroll-y" style="max-height:460px;">
@@ -423,13 +426,26 @@ function populateGlobalDateFilter(){
   if(keys.includes(current)) sel.value = current;
 }
 
+function searchMatch(r, q){
+  if(!q) return true;
+  return r.batch.toLowerCase().includes(q) || r.picker.toLowerCase().includes(q);
+}
+
 function getRows(){
   const m = document.getElementById('monthFilter').value;
   const d = document.getElementById('globalDateFilter').value;
+  const q = document.getElementById('globalSearch').value.trim().toLowerCase();
   let out = rows;
   if(m) out = out.filter(r=>r.monthKey===m);
   if(d) out = out.filter(r=>r.dateKey===d);
+  if(q) out = out.filter(r=>searchMatch(r, q));
   return out;
+}
+
+function getSummaryRows(){
+  // Date-wise summary always covers the full history — only search narrows it, Month/Date filter does not.
+  const q = document.getElementById('globalSearch').value.trim().toLowerCase();
+  return q ? rows.filter(r=>searchMatch(r, q)) : rows;
 }
 
 function downloadCSV(){
@@ -463,14 +479,13 @@ function render(){
   renderDateSummary();
   renderProcessBoard();
   renderOpen();
-  populateDateFilter();
   renderClosed();
 }
 
 function renderKPIs(){
   const scoped = getRows();
   const total = scoped.length;
-  const open = rows.filter(r=>r.status==='open').length; // always full — not started batches stay visible regardless of filter
+  const open = scoped.filter(r=>r.status==='open').length;
   const process = scoped.filter(r=>r.status==='process').length;
   const closed = scoped.filter(r=>r.status==='closed').length;
   document.getElementById('kpiTotal').textContent = total;
@@ -481,7 +496,7 @@ function renderKPIs(){
 
 function renderDateSummary(){
   const map = new Map();
-  for(const r of getRows()){
+  for(const r of getSummaryRows()){
     const k = r.dateKey;
     if(!map.has(k)) map.set(k, {created:0, closed:0, process:0, open:0, sortDT: r.createDT});
     const e = map.get(k);
@@ -544,9 +559,7 @@ function tickElapsed(){
 }
 
 function renderOpen(){
-  // Open batches (no Assign Time yet) always shown in full — they have no reliable
-  // date to filter by, and pending work should stay visible regardless of Month/Date filter.
-  const list = rows.filter(r=>r.status==='open');
+  const list = getRows().filter(r=>r.status==='open');
   document.getElementById('openCount').textContent = `(${list.length})`;
   const tbody = document.getElementById('openBody');
   if(list.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty">Sab batches assign ho chuke hain</td></tr>`; return; }
@@ -560,24 +573,8 @@ function renderOpen(){
   </tr>`).join('');
 }
 
-function populateDateFilter(){
-  const sel = document.getElementById('dateFilter');
-  const current = sel.value;
-  const scoped = getRows();
-  const dates = Array.from(new Set(scoped.filter(r=>r.status==='closed').map(r=>r.dateKey)));
-  const dateOrder = new Map();
-  scoped.forEach(r=>{ if(r.status==='closed' && r.createDT) dateOrder.set(r.dateKey, r.createDT); });
-  const sorted = dates.sort((a,b)=>(dateOrder.get(b)||0)-(dateOrder.get(a)||0));
-  sel.innerHTML = `<option value="">All dates</option>` + sorted.map(d=>`<option value="${d}">${d}</option>`).join('');
-  if(sorted.includes(current)) sel.value = current;
-}
-
 function renderClosed(){
-  const search = document.getElementById('closedSearch').value.trim().toLowerCase();
-  const dateFilter = document.getElementById('dateFilter').value;
   let list = getRows().filter(r=>r.status==='closed');
-  if(dateFilter) list = list.filter(r=>r.dateKey===dateFilter);
-  if(search) list = list.filter(r=> r.batch.toLowerCase().includes(search) || r.picker.toLowerCase().includes(search));
   list = list.sort((a,b)=>(b.completeDT||0)-(a.completeDT||0));
   document.getElementById('closedCount').textContent = `(${list.length})`;
   const tbody = document.getElementById('closedBody');
@@ -599,12 +596,11 @@ function renderClosed(){
   loadMoreBtn.style.display = list.length > closedRenderLimit ? 'block' : 'none';
 }
 
-document.getElementById('closedSearch').addEventListener('input', ()=>{ closedRenderLimit = CLOSED_PAGE; renderClosed(); });
-document.getElementById('dateFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; renderClosed(); });
 document.getElementById('loadMoreClosed').addEventListener('click', ()=>{ closedRenderLimit += CLOSED_PAGE; renderClosed(); });
 document.getElementById('refreshBtn').addEventListener('click', loadData);
 document.getElementById('monthFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; populateGlobalDateFilter(); render(); });
 document.getElementById('globalDateFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
+document.getElementById('globalSearch').addEventListener('input', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
 document.getElementById('downloadBtn').addEventListener('click', downloadCSV);
 
 function tickClock(){
