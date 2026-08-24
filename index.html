@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Picker Ops Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B1220;
+    --bg-grid: rgba(255,255,255,0.02);
+    --panel:#111A2C;
+    --panel-2:#0E1626;
+    --border:#22314B;
+    --text:#E7ECF5;
+    --text-dim:#8B99B3;
+    --text-faint:#54627E;
+    --open:#F2B84B;
+    --open-bg: rgba(242,184,75,0.12);
+    --process:#4FA3F7;
+    --process-bg: rgba(79,163,247,0.12);
+    --closed:#43C98A;
+    --closed-bg: rgba(67,201,138,0.12);
+    --danger:#F2555A;
+    --danger-bg: rgba(242,85,90,0.12);
+    --radius: 10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/100% 42px,
+      var(--bg);
+    color:var(--text);
+    font-family:'Space Grotesk', sans-serif;
+    min-height:100vh;
+    padding:20px 24px 60px;
+  }
+  .mono{ font-family:'JetBrains Mono', monospace; }
+
+  /* Header */
+  header{
+    display:flex; align-items:flex-start; justify-content:space-between;
+    flex-wrap:wrap; gap:16px;
+    padding-bottom:18px; margin-bottom:20px;
+    border-bottom:1px solid var(--border);
+  }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .brand-mark{
+    width:38px; height:38px; border-radius:8px;
+    background:linear-gradient(135deg, var(--process), var(--closed));
+    display:flex; align-items:center; justify-content:center;
+    font-family:'JetBrains Mono', monospace; font-weight:700; font-size:14px; color:#04101F;
+    flex-shrink:0;
+  }
+  .brand h1{ font-size:20px; margin:0; font-weight:700; letter-spacing:0.2px; }
+  .brand p{ margin:2px 0 0; font-size:12.5px; color:var(--text-dim); }
+  .header-right{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .clock{ text-align:right; }
+  .clock .time{ font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; }
+  .clock .sub{ font-size:11px; color:var(--text-dim); }
+  .sync-pill{
+    display:flex; align-items:center; gap:7px;
+    background:var(--panel); border:1px solid var(--border);
+    padding:7px 12px; border-radius:20px; font-size:12px; color:var(--text-dim);
+  }
+  .dot-live{ width:7px; height:7px; border-radius:50%; background:var(--closed); box-shadow:0 0 0 0 rgba(67,201,138,0.6); animation:pulse 2s infinite; }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(67,201,138,0.5); }
+    70%{ box-shadow:0 0 0 6px rgba(67,201,138,0); }
+    100%{ box-shadow:0 0 0 0 rgba(67,201,138,0); }
+  }
+  #refreshBtn{
+    background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:8px 14px; border-radius:20px; font-size:12px; cursor:pointer;
+    font-family:'Space Grotesk',sans-serif; font-weight:600;
+  }
+  #refreshBtn:hover{ border-color:var(--process); color:var(--process); }
+  #refreshBtn:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible{ outline:2px solid var(--process); outline-offset:2px; }
+
+  /* KPI strip */
+  .kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+  .kpi{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px 18px; position:relative; overflow:hidden;
+  }
+  .kpi::before{
+    content:''; position:absolute; left:0; top:0; bottom:0; width:3px;
+  }
+  .kpi.k-open::before{ background:var(--open); }
+  .kpi.k-process::before{ background:var(--process); }
+  .kpi.k-closed::before{ background:var(--closed); }
+  .kpi.k-total::before{ background:var(--text-faint); }
+  .kpi .label{ font-size:11.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:8px; }
+  .kpi .value{ font-family:'JetBrains Mono',monospace; font-size:30px; font-weight:700; line-height:1; }
+  .kpi .foot{ font-size:11.5px; color:var(--text-faint); margin-top:6px; }
+
+  section{ margin-bottom:26px; }
+  .section-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:10px; }
+  .section-head h2{ font-size:14px; margin:0; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-dim); font-weight:600; }
+  .section-head h2 .count{ color:var(--text); font-family:'JetBrains Mono',monospace; margin-left:6px; }
+
+  .panel{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+
+  /* Date summary table */
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th{ text-align:left; padding:10px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-faint); border-bottom:1px solid var(--border); background:var(--panel-2); font-weight:600; white-space:nowrap; }
+  td{ padding:10px 14px; border-bottom:1px solid rgba(255,255,255,0.04); vertical-align:middle; white-space:nowrap; }
+  tbody tr:hover{ background:rgba(255,255,255,0.02); }
+  tbody tr:last-child td{ border-bottom:none; }
+  .num{ font-family:'JetBrains Mono',monospace; }
+  .badge{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11.5px; font-family:'JetBrains Mono',monospace; font-weight:600; }
+  .badge.b-open{ background:var(--open-bg); color:var(--open); }
+  .badge.b-process{ background:var(--process-bg); color:var(--process); }
+  .badge.b-closed{ background:var(--closed-bg); color:var(--closed); }
+  .badge.b-danger{ background:var(--danger-bg); color:var(--danger); }
+  .bar-track{ width:70px; height:5px; background:rgba(255,255,255,0.06); border-radius:4px; overflow:hidden; display:inline-block; vertical-align:middle; margin-right:8px; }
+  .bar-fill{ height:100%; background:var(--closed); }
+
+  /* Departure-board style rows for in-process */
+  .board-row{
+    display:grid; grid-template-columns:110px 1fr 110px 90px 120px 90px; gap:10px;
+    align-items:center; padding:11px 14px; border-bottom:1px solid rgba(255,255,255,0.04);
+    font-size:13px;
+  }
+  .board-row.head{ background:var(--panel-2); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-faint); font-weight:600; }
+  .board-row:last-child{ border-bottom:none; }
+  .board-row .batch{ font-family:'JetBrains Mono',monospace; font-weight:600; }
+  .status-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:7px; flex-shrink:0; }
+  .status-dot.process{ background:var(--process); animation:pulse2 1.6s infinite; }
+  .status-dot.danger{ background:var(--danger); animation:pulse2 1.2s infinite; }
+  @keyframes pulse2{ 0%{ opacity:1;} 50%{ opacity:0.35;} 100%{ opacity:1;} }
+  .elapsed{ font-family:'JetBrains Mono',monospace; font-weight:700; }
+  .elapsed.warn{ color:var(--danger); }
+  .elapsed.ok{ color:var(--process); }
+
+  .toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .toolbar input, .toolbar select{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    padding:7px 12px; border-radius:7px; font-size:12.5px; font-family:'Space Grotesk',sans-serif;
+  }
+  .toolbar input{ width:180px; }
+  #loadMoreClosed{
+    display:block; width:100%; padding:10px; background:var(--panel-2); border:none; border-top:1px solid var(--border);
+    color:var(--text-dim); font-size:12.5px; cursor:pointer; font-family:'Space Grotesk',sans-serif; font-weight:600;
+  }
+  #loadMoreClosed:hover{ color:var(--process); }
+
+  .empty{ padding:26px; text-align:center; color:var(--text-faint); font-size:13px; }
+  .scroll-y{ max-height:420px; overflow-y:auto; }
+
+  #errorBanner{ display:none; background:var(--danger-bg); border:1px solid var(--danger); color:var(--danger); padding:12px 16px; border-radius:var(--radius); font-size:13px; margin-bottom:18px; }
+
+  @media (max-width:900px){
+    .kpis{ grid-template-columns:repeat(2,1fr); }
+    .board-row{ grid-template-columns:90px 1fr 90px; }
+    .board-row .col-channel, .board-row .col-shift, .board-row .col-assign{ display:none; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .dot-live, .status-dot.process, .status-dot.danger{ animation:none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">PK</div>
+    <div>
+      <h1>Picker Ops Board</h1>
+      <p>Pilgrim B2C &middot; batch picking status, live from sheet</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="sync-pill"><span class="dot-live"></span><span id="syncText">syncing…</span></div>
+    <button id="refreshBtn">↻ Refresh</button>
+    <div class="clock">
+      <div class="time mono" id="clockTime">--:--:--</div>
+      <div class="sub" id="clockDate">--</div>
+    </div>
+  </div>
+</header>
+
+<div id="errorBanner"></div>
+
+<section class="kpis" id="kpiStrip">
+  <div class="kpi k-total"><div class="label">Total Batches Created</div><div class="value mono" id="kpiTotal">–</div><div class="foot" id="kpiTotalFoot">all dates</div></div>
+  <div class="kpi k-open"><div class="label">Open (Not Started)</div><div class="value mono" id="kpiOpen">–</div><div class="foot">assign time pending</div></div>
+  <div class="kpi k-process"><div class="label">Under Process</div><div class="value mono" id="kpiProcess">–</div><div class="foot">picking in progress</div></div>
+  <div class="kpi k-closed"><div class="label">Closed</div><div class="value mono" id="kpiClosed">–</div><div class="foot">picking complete</div></div>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>Date-wise Summary</h2>
+  </div>
+  <div class="panel">
+    <div class="scroll-y">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th><th>Created</th><th>Closed</th><th>Under Process</th><th>Open</th><th>Close Rate</th>
+          </tr>
+        </thead>
+        <tbody id="dateSummaryBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>Under Process <span class="count" id="processCount">(0)</span></h2>
+  </div>
+  <div class="panel">
+    <div class="board-row head">
+      <div>Batch</div><div>Picker / Channel</div><div class="col-shift">Shift</div><div class="col-assign">Assign Time</div><div>Since</div><div>Elapsed</div>
+    </div>
+    <div class="scroll-y" id="processBoard"></div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>Open — Not Yet Assigned <span class="count" id="openCount">(0)</span></h2>
+  </div>
+  <div class="panel">
+    <div class="scroll-y">
+      <table>
+        <thead><tr><th>Batch</th><th>Date</th><th>Channel</th><th>Pick List</th><th>Orders</th><th>Qty</th></tr></thead>
+        <tbody id="openBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>Closed — Batch-wise Closing Time <span class="count" id="closedCount">(0)</span></h2>
+    <div class="toolbar">
+      <input type="text" id="closedSearch" placeholder="Search batch / picker…">
+      <select id="dateFilter"><option value="">All dates</option></select>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="scroll-y" style="max-height:460px;">
+      <table>
+        <thead><tr><th>Batch</th><th>Date</th><th>Picker</th><th>Channel</th><th>Assign</th><th>Complete</th><th>Duration</th></tr></thead>
+        <tbody id="closedBody"></tbody>
+      </table>
+    </div>
+    <button id="loadMoreClosed">Load more</button>
+  </div>
+</section>
+
+<script>
+const SHEET_ID = '1I4zt-rpsts9DX-HEwm8IjXflbOQ7LUhjLEf8zPvnsoc';
+const GID = '0';
+const GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${GID}`;
+
+let rows = []; // parsed batch objects
+let closedRenderLimit = 60;
+const CLOSED_PAGE = 60;
+
+function cellText(c){
+  if(!c) return '';
+  if(c.f !== undefined && c.f !== null) return String(c.f);
+  if(c.v !== undefined && c.v !== null) return String(c.v);
+  return '';
+}
+
+function parseDT(str){
+  if(!str) return null;
+  str = str.trim();
+  if(!str || str.includes('1899')) return null;
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}):(\d{2}))?$/);
+  if(!m) return null;
+  const d = +m[1], mo = +m[2], y = +m[3], h = +(m[4]||0), mi = +(m[5]||0), s = +(m[6]||0);
+  const dt = new Date(y, mo-1, d, h, mi, s);
+  if(isNaN(dt.getTime())) return null;
+  return dt;
+}
+
+function dateKey(dt){
+  if(!dt) return null;
+  const y = dt.getFullYear(), m = String(dt.getMonth()+1).padStart(2,'0'), d = String(dt.getDate()).padStart(2,'0');
+  return `${d}/${m}/${y}`;
+}
+
+function fmtDT(dt){
+  if(!dt) return '—';
+  const p = n => String(n).padStart(2,'0');
+  return `${p(dt.getDate())}/${p(dt.getMonth()+1)} ${p(dt.getHours())}:${p(dt.getMinutes())}`;
+}
+
+function fmtDuration(ms){
+  if(ms == null || ms < 0) return '—';
+  const totalMin = Math.floor(ms/60000);
+  const h = Math.floor(totalMin/60), m = totalMin%60;
+  if(h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+async function loadData(){
+  const banner = document.getElementById('errorBanner');
+  const syncText = document.getElementById('syncText');
+  try{
+    syncText.textContent = 'syncing…';
+    const res = await fetch(GVIZ_URL + '&_=' + Date.now());
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    let text = await res.text();
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}');
+    const json = JSON.parse(text.substring(jsonStart, jsonEnd+1));
+    const table = json.table;
+    const out = [];
+    for(const r of (table.rows||[])){
+      const c = r.c || [];
+      const batchCode = cellText(c[0]);
+      if(!batchCode) continue; // skip blank rows
+      const assignRaw = cellText(c[9]);
+      const completeRaw = cellText(c[10]);
+      const pickerDateRaw = cellText(c[21]);
+      const sheetDateRaw = cellText(c[1]);
+
+      const assignDT = parseDT(assignRaw);
+      const completeDT = parseDT(completeRaw);
+      let createDT = parseDT(pickerDateRaw) || assignDT || parseDT(sheetDateRaw);
+
+      let status;
+      if(!assignDT) status = 'open';
+      else if(!completeDT) status = 'process';
+      else status = 'closed';
+
+      out.push({
+        batch: batchCode,
+        pickListType: cellText(c[2]),
+        channel: cellText(c[3]),
+        orders: cellText(c[4]),
+        qty: cellText(c[5]),
+        picker: cellText(c[6]) || '—',
+        shift: cellText(c[8]) || '—',
+        assignDT, completeDT, createDT,
+        dateKey: createDT ? dateKey(createDT) : 'Unknown',
+        status
+      });
+    }
+    rows = out;
+    banner.style.display = 'none';
+    syncText.textContent = 'live · ' + new Date().toLocaleTimeString('en-IN');
+    render();
+  }catch(err){
+    banner.style.display = 'block';
+    banner.textContent = 'Sheet se data load nahi ho paya: ' + err.message + '. Sheet ka sharing "Anyone with link – Viewer" pe check kar lo.';
+    syncText.textContent = 'sync failed';
+  }
+}
+
+function render(){
+  renderKPIs();
+  renderDateSummary();
+  renderProcessBoard();
+  renderOpen();
+  populateDateFilter();
+  renderClosed();
+}
+
+function renderKPIs(){
+  const total = rows.length;
+  const open = rows.filter(r=>r.status==='open').length;
+  const process = rows.filter(r=>r.status==='process').length;
+  const closed = rows.filter(r=>r.status==='closed').length;
+  document.getElementById('kpiTotal').textContent = total;
+  document.getElementById('kpiOpen').textContent = open;
+  document.getElementById('kpiProcess').textContent = process;
+  document.getElementById('kpiClosed').textContent = closed;
+}
+
+function renderDateSummary(){
+  const map = new Map();
+  for(const r of rows){
+    const k = r.dateKey;
+    if(!map.has(k)) map.set(k, {created:0, closed:0, process:0, open:0, sortDT: r.createDT});
+    const e = map.get(k);
+    e.created++;
+    e[r.status]++;
+    if(r.createDT && (!e.sortDT || r.createDT > e.sortDT)) e.sortDT = r.createDT;
+  }
+  const entries = Array.from(map.entries()).sort((a,b)=>{
+    if(a[0]==='Unknown') return 1;
+    if(b[0]==='Unknown') return -1;
+    return (b[1].sortDT||0) - (a[1].sortDT||0);
+  });
+  const tbody = document.getElementById('dateSummaryBody');
+  if(entries.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty">No data yet</td></tr>`; return; }
+  tbody.innerHTML = entries.map(([date, e])=>{
+    const rate = e.created ? Math.round((e.closed/e.created)*100) : 0;
+    return `<tr>
+      <td class="num">${date}</td>
+      <td class="num">${e.created}</td>
+      <td class="num"><span class="badge b-closed">${e.closed}</span></td>
+      <td class="num"><span class="badge b-process">${e.process}</span></td>
+      <td class="num"><span class="badge b-open">${e.open}</span></td>
+      <td><span class="bar-track"><span class="bar-fill" style="width:${rate}%"></span></span><span class="num">${rate}%</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProcessBoard(){
+  const list = rows.filter(r=>r.status==='process').sort((a,b)=>(a.assignDT||0)-(b.assignDT||0));
+  document.getElementById('processCount').textContent = `(${list.length})`;
+  const el = document.getElementById('processBoard');
+  if(list.length===0){ el.innerHTML = `<div class="empty">Koi batch under process nahi hai</div>`; return; }
+  el.innerHTML = list.map(r=>{
+    const ms = Date.now() - r.assignDT.getTime();
+    const isLong = ms > 3*3600*1000;
+    return `<div class="board-row" data-assign="${r.assignDT.getTime()}">
+      <div class="batch"><span class="status-dot ${isLong?'danger':'process'}"></span>${r.batch}</div>
+      <div>${r.picker} <span style="color:var(--text-faint)">· ${r.channel||'—'}</span></div>
+      <div class="col-shift mono" style="color:var(--text-dim)">${r.shift}</div>
+      <div class="col-assign mono" style="color:var(--text-dim)">${fmtDT(r.assignDT)}</div>
+      <div class="mono" style="color:var(--text-dim)">since assign</div>
+      <div class="elapsed ${isLong?'warn':'ok'}" data-live-elapsed>${fmtDuration(ms)}</div>
+    </div>`;
+  }).join('');
+}
+
+function tickElapsed(){
+  document.querySelectorAll('.board-row[data-assign]').forEach(row=>{
+    const assignMs = Number(row.getAttribute('data-assign'));
+    const ms = Date.now() - assignMs;
+    const isLong = ms > 3*3600*1000;
+    const elEl = row.querySelector('[data-live-elapsed]');
+    if(elEl){
+      elEl.textContent = fmtDuration(ms);
+      elEl.className = 'elapsed ' + (isLong ? 'warn' : 'ok');
+    }
+    const dotEl = row.querySelector('.status-dot');
+    if(dotEl) dotEl.className = 'status-dot ' + (isLong ? 'danger' : 'process');
+  });
+}
+
+function renderOpen(){
+  const list = rows.filter(r=>r.status==='open');
+  document.getElementById('openCount').textContent = `(${list.length})`;
+  const tbody = document.getElementById('openBody');
+  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty">Sab batches assign ho chuke hain</td></tr>`; return; }
+  tbody.innerHTML = list.map(r=>`<tr>
+    <td class="num">${r.batch}</td>
+    <td class="num">${r.dateKey}</td>
+    <td>${r.channel||'—'}</td>
+    <td>${r.pickListType||'—'}</td>
+    <td class="num">${r.orders||'—'}</td>
+    <td class="num">${r.qty||'—'}</td>
+  </tr>`).join('');
+}
+
+function populateDateFilter(){
+  const sel = document.getElementById('dateFilter');
+  const current = sel.value;
+  const dates = Array.from(new Set(rows.filter(r=>r.status==='closed').map(r=>r.dateKey))).sort((a,b)=>{
+    const da = parseDT(a.split('/').reverse().join('-')) ;
+    return 0;
+  });
+  // simpler: sort by underlying createDT desc using a map
+  const dateOrder = new Map();
+  rows.forEach(r=>{ if(r.status==='closed' && r.createDT) dateOrder.set(r.dateKey, r.createDT); });
+  const sorted = dates.sort((a,b)=>(dateOrder.get(b)||0)-(dateOrder.get(a)||0));
+  sel.innerHTML = `<option value="">All dates</option>` + sorted.map(d=>`<option value="${d}">${d}</option>`).join('');
+  if(sorted.includes(current)) sel.value = current;
+}
+
+function renderClosed(){
+  const search = document.getElementById('closedSearch').value.trim().toLowerCase();
+  const dateFilter = document.getElementById('dateFilter').value;
+  let list = rows.filter(r=>r.status==='closed');
+  if(dateFilter) list = list.filter(r=>r.dateKey===dateFilter);
+  if(search) list = list.filter(r=> r.batch.toLowerCase().includes(search) || r.picker.toLowerCase().includes(search));
+  list = list.sort((a,b)=>(b.completeDT||0)-(a.completeDT||0));
+  document.getElementById('closedCount').textContent = `(${list.length})`;
+  const tbody = document.getElementById('closedBody');
+  const loadMoreBtn = document.getElementById('loadMoreClosed');
+  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="7" class="empty">Koi closed batch nahi mila</td></tr>`; loadMoreBtn.style.display='none'; return; }
+  const shown = list.slice(0, closedRenderLimit);
+  tbody.innerHTML = shown.map(r=>{
+    const durMs = r.completeDT - r.assignDT;
+    return `<tr>
+      <td class="num">${r.batch}</td>
+      <td class="num">${r.dateKey}</td>
+      <td>${r.picker}</td>
+      <td>${r.channel||'—'}</td>
+      <td class="mono" style="color:var(--text-dim)">${fmtDT(r.assignDT)}</td>
+      <td class="mono" style="color:var(--text-dim)">${fmtDT(r.completeDT)}</td>
+      <td class="num"><span class="badge b-closed">${fmtDuration(durMs)}</span></td>
+    </tr>`;
+  }).join('');
+  loadMoreBtn.style.display = list.length > closedRenderLimit ? 'block' : 'none';
+}
+
+document.getElementById('closedSearch').addEventListener('input', ()=>{ closedRenderLimit = CLOSED_PAGE; renderClosed(); });
+document.getElementById('dateFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; renderClosed(); });
+document.getElementById('loadMoreClosed').addEventListener('click', ()=>{ closedRenderLimit += CLOSED_PAGE; renderClosed(); });
+document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+function tickClock(){
+  const now = new Date();
+  document.getElementById('clockTime').textContent = now.toLocaleTimeString('en-IN');
+  document.getElementById('clockDate').textContent = now.toLocaleDateString('en-IN', {weekday:'short', day:'2-digit', month:'short', year:'numeric'});
+}
+
+tickClock();
+setInterval(tickClock, 1000);
+setInterval(tickElapsed, 1000);
+setInterval(loadData, 30000);
+loadData();
+</script>
+
+</body>
+</html>
