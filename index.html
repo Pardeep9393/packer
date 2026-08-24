@@ -380,9 +380,7 @@ async function loadData(){
 
       const assignDT = parseDT(assignRaw);
       const completeDT = parseDT(completeRaw);
-      // If no create date is available from any column, default to today so the batch
-      // still shows up under today's date instead of being lost in an 'Unknown' bucket.
-      let createDT = parseDT(pickerDateRaw) || assignDT || parseDT(sheetDateRaw) || new Date();
+      let createDT = parseDT(pickerDateRaw) || assignDT || parseDT(sheetDateRaw);
 
       let status;
       if(!assignDT) status = 'open';
@@ -461,12 +459,17 @@ function getRows(){
   const d = document.getElementById('globalDateFilter').value;
   const ch = document.getElementById('channelFilter').value;
   const q = document.getElementById('globalSearch').value.trim().toLowerCase();
-  let out = rows;
-  if(m) out = out.filter(r=>r.monthKey===m);
-  if(d) out = out.filter(r=>r.dateKey===d);
-  if(ch) out = out.filter(r=>r.channel===ch);
-  if(q) out = out.filter(r=>searchMatch(r, q));
-  return out;
+  return rows.filter(r=>{
+    // Open batches with no known create date have nothing to match a date/month
+    // filter against — always keep them visible instead of hiding them, since
+    // they're still pending action.
+    const isUndatedOpen = r.status === 'open' && r.dateKey === 'Unknown';
+    if(m && r.monthKey !== m && !isUndatedOpen) return false;
+    if(d && r.dateKey !== d && !isUndatedOpen) return false;
+    if(ch && r.channel !== ch) return false;
+    if(q && !searchMatch(r, q)) return false;
+    return true;
+  });
 }
 
 function getSummaryRows(){
