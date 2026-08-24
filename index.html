@@ -207,7 +207,7 @@
 
 <section class="kpis" id="kpiStrip">
   <div class="kpi k-total"><div class="label">Total Batches Created</div><div class="value mono" id="kpiTotal">–</div><div class="foot" id="kpiTotalFoot">all dates</div></div>
-  <div class="kpi k-open"><div class="label">Open (Not Started)</div><div class="value mono" id="kpiOpen">–</div><div class="foot">assign time pending</div></div>
+  <div class="kpi k-open"><div class="label">Open (Not Started)</div><div class="value mono" id="kpiOpen">–</div><div class="foot">assign time pending · all dates</div></div>
   <div class="kpi k-process"><div class="label">Under Process</div><div class="value mono" id="kpiProcess">–</div><div class="foot">picking in progress</div></div>
   <div class="kpi k-closed"><div class="label">Closed</div><div class="value mono" id="kpiClosed">–</div><div class="foot">picking complete</div></div>
 </section>
@@ -245,6 +245,7 @@
 <section>
   <div class="section-head">
     <h2>Open — Not Yet Assigned <span class="count" id="openCount">(0)</span></h2>
+    <div style="font-size:11.5px; color:var(--text-faint);">Always shows all pending batches — not affected by Month/Date filter</div>
   </div>
   <div class="panel">
     <div class="scroll-y">
@@ -458,7 +459,7 @@ function render(){
 function renderKPIs(){
   const scoped = getRows();
   const total = scoped.length;
-  const open = scoped.filter(r=>r.status==='open').length;
+  const open = rows.filter(r=>r.status==='open').length; // always full — not started batches stay visible regardless of filter
   const process = scoped.filter(r=>r.status==='process').length;
   const closed = scoped.filter(r=>r.status==='closed').length;
   document.getElementById('kpiTotal').textContent = total;
@@ -532,7 +533,9 @@ function tickElapsed(){
 }
 
 function renderOpen(){
-  const list = getRows().filter(r=>r.status==='open');
+  // Open batches (no Assign Time yet) always shown in full — they have no reliable
+  // date to filter by, and pending work should stay visible regardless of Month/Date filter.
+  const list = rows.filter(r=>r.status==='open');
   document.getElementById('openCount').textContent = `(${list.length})`;
   const tbody = document.getElementById('openBody');
   if(list.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty">Sab batches assign ho chuke hain</td></tr>`; return; }
