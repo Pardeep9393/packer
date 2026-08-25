@@ -401,6 +401,7 @@ async function loadData(){
       const assignRaw = cellText(c[col.assign]);
       const completeRaw = cellText(c[col.complete]);
       const sheetDateRaw = cellText(c[col.date]);
+      const pickerRaw = cellText(c[col.picker]);
 
       const assignDT = parseDT(assignRaw);
       const completeDT = parseDT(completeRaw);
@@ -408,7 +409,7 @@ async function loadData(){
       if(!createDT) continue; // no date in the tracker for this batch — don't show it on the dashboard
 
       let status;
-      if(!assignDT) status = 'open';
+      if(!assignDT || !pickerRaw) status = 'open'; // no assign time OR no picker assigned yet = not started
       else if(!completeDT) status = 'process';
       else status = 'closed';
 
