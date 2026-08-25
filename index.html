@@ -368,19 +368,43 @@ async function loadData(){
     const jsonEnd = text.lastIndexOf('}');
     const json = JSON.parse(text.substring(jsonStart, jsonEnd+1));
     const table = json.table;
+
+    // Map columns by their header label instead of a fixed position, so the
+    // dashboard doesn't break if a column gets inserted/reordered in the sheet.
+    const norm = s => (s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const col = {};
+    (table.cols||[]).forEach((c, i)=>{
+      const l = norm(c.label);
+      if(!l) return;
+      if(col.batch===undefined && l.includes('batchcode')) col.batch = i;
+      else if(col.date===undefined && l==='date') col.date = i;
+      else if(col.pickListType===undefined && l.includes('picklist')) col.pickListType = i;
+      else if(col.channel===undefined && l.includes('channel')) col.channel = i;
+      else if(col.orders===undefined && l.includes('order')) col.orders = i;
+      else if(col.qty===undefined && l.includes('qty')) col.qty = i;
+      else if(col.picker===undefined && l.includes('pickername')) col.picker = i;
+      else if(col.assign===undefined && l.includes('pickingassign')) col.assign = i;
+      else if(col.complete===undefined && l.includes('pickingcomplete')) col.complete = i;
+      else if(col.pickingStatus===undefined && l.includes('pickingstatus')) col.pickingStatus = i;
+      else if(col.shift===undefined && l==='shift') col.shift = i;
+    });
+    // Fallback to the previous fixed positions only if a header couldn't be matched
+    // (e.g. sheet has no header row this fetch) so the dashboard still renders something.
+    const FALLBACK = {batch:0, date:1, pickListType:2, channel:3, orders:4, qty:5, picker:7, pickingStatus:8, shift:9, assign:10, complete:11};
+    Object.keys(FALLBACK).forEach(k=>{ if(col[k]===undefined) col[k] = FALLBACK[k]; });
+
     const out = [];
     for(const r of (table.rows||[])){
       const c = r.c || [];
-      const batchCode = cellText(c[0]);
+      const batchCode = cellText(c[col.batch]);
       if(!batchCode) continue; // skip blank rows
-      const assignRaw = cellText(c[9]);
-      const completeRaw = cellText(c[10]);
-      const pickerDateRaw = cellText(c[21]);
-      const sheetDateRaw = cellText(c[1]);
+      const assignRaw = cellText(c[col.assign]);
+      const completeRaw = cellText(c[col.complete]);
+      const sheetDateRaw = cellText(c[col.date]);
 
       const assignDT = parseDT(assignRaw);
       const completeDT = parseDT(completeRaw);
-      let createDT = parseDT(pickerDateRaw) || assignDT || parseDT(sheetDateRaw);
+      let createDT = assignDT || parseDT(sheetDateRaw);
       if(!createDT) continue; // no date in the tracker for this batch — don't show it on the dashboard
 
       let status;
@@ -390,12 +414,12 @@ async function loadData(){
 
       out.push({
         batch: batchCode,
-        pickListType: cellText(c[2]),
-        channel: cellText(c[3]),
-        orders: cellText(c[4]),
-        qty: cellText(c[5]),
-        picker: cellText(c[6]) || '—',
-        shift: cellText(c[8]) || '—',
+        pickListType: cellText(c[col.pickListType]),
+        channel: cellText(c[col.channel]),
+        orders: cellText(c[col.orders]),
+        qty: cellText(c[col.qty]),
+        picker: cellText(c[col.picker]) || '—',
+        shift: cellText(c[col.shift]) || '—',
         assignDT, completeDT, createDT,
         dateKey: createDT ? dateKey(createDT) : 'Unknown',
         monthKey: createDT ? monthKey(createDT) : null,
