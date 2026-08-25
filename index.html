@@ -317,8 +317,8 @@ function parseDT(str){
   if(!str) return null;
   str = str.trim();
   if(!str || str.includes('1899')) return null;
-  // accepts both dd/mm/yyyy and dd-mm-yyyy, with optional time
-  const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2}):(\d{2}))?$/);
+  // accepts both dd/mm/yyyy and dd-mm-yyyy, with optional time (seconds optional too — the Date column has HH:MM only)
+  const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if(!m) return null;
   const d = +m[1], mo = +m[2], y = +m[3], h = +(m[4]||0), mi = +(m[5]||0), s = +(m[6]||0);
   const dt = new Date(y, mo-1, d, h, mi, s);
