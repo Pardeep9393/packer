@@ -202,40 +202,15 @@
     .dot-live, .status-dot.process, .status-dot.danger{ animation:none; }
   }
 
-  /* Long-process alert popup */
-  .alert-container{
-    position:fixed; top:18px; right:18px; z-index:999;
-    display:flex; flex-direction:column; gap:10px; width:460px;
-  }
-  .alert-toast{
-    background:var(--panel); border:1px solid var(--danger); border-left:4px solid var(--danger);
-    border-radius:var(--radius); box-shadow:0 6px 18px rgba(0,0,0,0.45);
-    padding:12px 14px; animation:slideIn 0.25s ease-out;
-  }
-  @keyframes slideIn{ from{ transform:translateX(30px); opacity:0; } to{ transform:translateX(0); opacity:1; } }
-  .alert-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:10px; }
-  .alert-title{ font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:12.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--danger); }
-  .alert-toggle{
-    background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim);
-    cursor:pointer; font-size:10.5px; line-height:1; padding:4px 9px; border-radius:4px; flex-shrink:0;
-    font-family:'Barlow',sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;
-  }
-  .alert-toggle:hover{ border-color:var(--danger); color:var(--danger); }
-  .alert-body{ margin-bottom:10px; max-height:220px; overflow-y:auto; }
-  .alert-table{ width:100%; border-collapse:collapse; font-size:12px; }
-  .alert-table th{ text-align:left; padding:5px 6px; font-family:'Barlow Condensed',sans-serif; font-size:10.5px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-faint); border-bottom:1px solid var(--border); font-weight:700; }
-  .alert-table td{ padding:6px 6px; border-bottom:1px solid rgba(255,255,255,0.04); color:var(--text); }
-  .alert-table tr:last-child td{ border-bottom:none; }
-  .alert-actions{ display:flex; gap:8px; }
-  .alert-download{
+  /* Incomplete picking (1:15+) alert table section */
+  #alertDownloadBtn{
     background:var(--danger-bg); border:1px solid var(--danger); color:var(--danger);
-    padding:6px 12px; border-radius:4px; font-size:11.5px; cursor:pointer;
+    padding:7px 14px; border-radius:4px; font-size:12px; cursor:pointer;
     font-family:'Barlow',sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;
   }
-  .alert-download:hover{ background:var(--danger); color:var(--bg); }
-  @media (max-width:900px){
-    .alert-container{ left:12px; right:12px; width:auto; top:12px; }
-  }
+  #alertDownloadBtn:hover{ background:var(--danger); color:var(--bg); }
+  #alertSection .section-head{ justify-content:space-between; }
+  #alertSection td.elapsed-danger{ color:var(--danger); font-weight:700; }
 </style>
 </head>
 <body>
@@ -264,7 +239,21 @@
 </header>
 
 <div id="errorBanner"></div>
-<div id="alertContainer" class="alert-container"></div>
+
+<section id="alertSection" style="display:none;">
+  <div class="section-head">
+    <h2 style="color:var(--danger);">⚠ Incomplete Picking — 1:15+ <span class="count" id="alertCount">(0)</span></h2>
+    <button id="alertDownloadBtn" title="Download this list as CSV">⬇ Download</button>
+  </div>
+  <div class="panel" style="border-color:var(--danger);">
+    <div class="scroll-y" style="max-height:280px;">
+      <table>
+        <thead><tr><th>Batch ID</th><th>Qty</th><th>Picker</th><th>Assign Time</th><th>Elapsed</th></tr></thead>
+        <tbody id="alertBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
 
 <section class="kpis" id="kpiStrip">
   <div class="kpi k-total"><div class="label">Total Batches Created</div><div class="value mono" id="kpiTotal">–</div><div class="foot" id="kpiTotalFoot">all dates</div></div>
@@ -653,50 +642,35 @@ function tickElapsed(){
   checkLongProcessAlerts();
 }
 
-// --- Long-process summary popup: shows ALL incomplete (under-process) batches whose
-// elapsed time has crossed 1:15 (1h 15m), as one summary table that live-updates.
-// Popup stays fixed on screen; a Hide/Show toggle collapses it instead of closing it. ---
+// --- Incomplete picking (1:15+) table: permanent in-page section listing ALL
+// under-process batches whose elapsed time has crossed 1:15 (1h 15m). Live-updates
+// every second, sorted newest assign time first. ---
 const ALERT_THRESHOLD_MS = (1*60 + 15) * 60 * 1000; // 1:15 = 75 min
-let popupCollapsed = false;
 
 function checkLongProcessAlerts(){
   const list = rows.filter(r=>r.status==='process' && r.assignDT && (Date.now() - r.assignDT.getTime()) > ALERT_THRESHOLD_MS)
     .sort((a,b)=> b.assignDT - a.assignDT); // naya date/time sabse upar
-  renderLongProcessPopup(list);
+  renderAlertTable(list);
 }
 
-function renderLongProcessPopup(list){
-  const container = document.getElementById('alertContainer');
-  if(list.length===0){ container.innerHTML=''; return; }
+function renderAlertTable(list){
+  const section = document.getElementById('alertSection');
+  const tbody = document.getElementById('alertBody');
+  document.getElementById('alertCount').textContent = `(${list.length})`;
 
-  const rowsHtml = list.map(r=>{
+  if(list.length===0){ section.style.display = 'none'; tbody.innerHTML = ''; return; }
+  section.style.display = '';
+
+  tbody.innerHTML = list.map(r=>{
     const ms = Date.now() - r.assignDT.getTime();
     return `<tr>
-      <td class="mono">${r.batch}</td>
+      <td class="num">${r.batch}</td>
       <td class="num">${r.qty||'—'}</td>
       <td>${r.picker}</td>
       <td class="mono" style="color:var(--text-dim)">${fmtDT(r.assignDT)}</td>
-      <td class="mono" style="color:var(--danger)">${fmtDuration(ms)}</td>
+      <td class="num elapsed-danger">${fmtDuration(ms)}</td>
     </tr>`;
   }).join('');
-
-  container.innerHTML = `
-    <div class="alert-toast">
-      <div class="alert-head">
-        <span class="alert-title">⚠ Incomplete Picking — 1:15+ (${list.length})</span>
-        <button class="alert-toggle" id="alertToggleBtn">${popupCollapsed ? '▲ Show' : '▼ Hide'}</button>
-      </div>
-      ${popupCollapsed ? '' : `
-      <div class="alert-body">
-        <table class="alert-table">
-          <thead><tr><th>Batch ID</th><th>Qty</th><th>Picker</th><th>Assign Time</th><th>Elapsed</th></tr></thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>
-      </div>
-      <div class="alert-actions">
-        <button class="alert-download" id="alertDownloadBtn">⬇ Download</button>
-      </div>`}
-    </div>`;
 }
 
 function downloadLongProcessCSV(){
@@ -721,10 +695,7 @@ function downloadLongProcessCSV(){
   URL.revokeObjectURL(url);
 }
 
-document.getElementById('alertContainer').addEventListener('click', (e)=>{
-  if(e.target.id === 'alertToggleBtn'){ popupCollapsed = !popupCollapsed; checkLongProcessAlerts(); }
-  else if(e.target.id === 'alertDownloadBtn'){ downloadLongProcessCSV(); }
-});
+document.getElementById('alertDownloadBtn').addEventListener('click', downloadLongProcessCSV);
 
 function renderOpen(){
   const list = getRows().filter(r=>r.status==='open');
