@@ -215,8 +215,12 @@
   @keyframes slideIn{ from{ transform:translateX(30px); opacity:0; } to{ transform:translateX(0); opacity:1; } }
   .alert-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:10px; }
   .alert-title{ font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:12.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--danger); }
-  .alert-close{ background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:13px; line-height:1; padding:2px 4px; flex-shrink:0; }
-  .alert-close:hover{ color:var(--text); }
+  .alert-toggle{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim);
+    cursor:pointer; font-size:10.5px; line-height:1; padding:4px 9px; border-radius:4px; flex-shrink:0;
+    font-family:'Barlow',sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;
+  }
+  .alert-toggle:hover{ border-color:var(--danger); color:var(--danger); }
   .alert-body{ margin-bottom:10px; max-height:220px; overflow-y:auto; }
   .alert-table{ width:100%; border-collapse:collapse; font-size:12px; }
   .alert-table th{ text-align:left; padding:5px 6px; font-family:'Barlow Condensed',sans-serif; font-size:10.5px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-faint); border-bottom:1px solid var(--border); font-weight:700; }
@@ -650,27 +654,20 @@ function tickElapsed(){
 }
 
 // --- Long-process summary popup: shows ALL incomplete (under-process) batches whose
-// elapsed time has crossed 1:15 (1h 15m), as one summary table that live-updates. ---
+// elapsed time has crossed 1:15 (1h 15m), as one summary table that live-updates.
+// Popup stays fixed on screen; a Hide/Show toggle collapses it instead of closing it. ---
 const ALERT_THRESHOLD_MS = (1*60 + 15) * 60 * 1000; // 1:15 = 75 min
-let popupDismissed = false;
-let lastAlertBatchSet = new Set();
+let popupCollapsed = false;
 
 function checkLongProcessAlerts(){
   const list = rows.filter(r=>r.status==='process' && r.assignDT && (Date.now() - r.assignDT.getTime()) > ALERT_THRESHOLD_MS)
     .sort((a,b)=> b.assignDT - a.assignDT); // naya date/time sabse upar
-  const currentBatches = new Set(list.map(r=>r.batch));
-
-  // agar koi NAYA batch threshold cross kar chuka hai, to dismissed popup ko dobara khol do
-  const hasNewBatch = list.some(r=>!lastAlertBatchSet.has(r.batch));
-  if(hasNewBatch) popupDismissed = false;
-  lastAlertBatchSet = currentBatches;
-
   renderLongProcessPopup(list);
 }
 
 function renderLongProcessPopup(list){
   const container = document.getElementById('alertContainer');
-  if(list.length===0 || popupDismissed){ container.innerHTML=''; return; }
+  if(list.length===0){ container.innerHTML=''; return; }
 
   const rowsHtml = list.map(r=>{
     const ms = Date.now() - r.assignDT.getTime();
@@ -687,8 +684,9 @@ function renderLongProcessPopup(list){
     <div class="alert-toast">
       <div class="alert-head">
         <span class="alert-title">⚠ Incomplete Picking — 1:15+ (${list.length})</span>
-        <button class="alert-close" id="alertCloseBtn" aria-label="Close">✕</button>
+        <button class="alert-toggle" id="alertToggleBtn">${popupCollapsed ? '▲ Show' : '▼ Hide'}</button>
       </div>
+      ${popupCollapsed ? '' : `
       <div class="alert-body">
         <table class="alert-table">
           <thead><tr><th>Batch ID</th><th>Qty</th><th>Picker</th><th>Assign Time</th><th>Elapsed</th></tr></thead>
@@ -697,7 +695,7 @@ function renderLongProcessPopup(list){
       </div>
       <div class="alert-actions">
         <button class="alert-download" id="alertDownloadBtn">⬇ Download</button>
-      </div>
+      </div>`}
     </div>`;
 }
 
@@ -724,7 +722,7 @@ function downloadLongProcessCSV(){
 }
 
 document.getElementById('alertContainer').addEventListener('click', (e)=>{
-  if(e.target.id === 'alertCloseBtn'){ popupDismissed = true; renderLongProcessPopup([]); }
+  if(e.target.id === 'alertToggleBtn'){ popupCollapsed = !popupCollapsed; checkLongProcessAlerts(); }
   else if(e.target.id === 'alertDownloadBtn'){ downloadLongProcessCSV(); }
 });
 
