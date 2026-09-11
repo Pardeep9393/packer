@@ -656,7 +656,8 @@ let popupDismissed = false;
 let lastAlertBatchSet = new Set();
 
 function checkLongProcessAlerts(){
-  const list = rows.filter(r=>r.status==='process' && r.assignDT && (Date.now() - r.assignDT.getTime()) > ALERT_THRESHOLD_MS);
+  const list = rows.filter(r=>r.status==='process' && r.assignDT && (Date.now() - r.assignDT.getTime()) > ALERT_THRESHOLD_MS)
+    .sort((a,b)=> b.assignDT - a.assignDT); // naya date/time sabse upar
   const currentBatches = new Set(list.map(r=>r.batch));
 
   // agar koi NAYA batch threshold cross kar chuka hai, to dismissed popup ko dobara khol do
@@ -701,7 +702,8 @@ function renderLongProcessPopup(list){
 }
 
 function downloadLongProcessCSV(){
-  const list = rows.filter(r=>r.status==='process' && r.assignDT && (Date.now() - r.assignDT.getTime()) > ALERT_THRESHOLD_MS);
+  const list = rows.filter(r=>r.status==='process' && r.assignDT && (Date.now() - r.assignDT.getTime()) > ALERT_THRESHOLD_MS)
+    .sort((a,b)=> b.assignDT - a.assignDT);
   if(list.length===0) return;
   const header = ['Batch ID','Qty','Picker Name','Channel','Shift','Assign Time','Elapsed'];
   const esc = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
