@@ -205,7 +205,7 @@
   /* Long-process alert popup */
   .alert-container{
     position:fixed; top:18px; right:18px; z-index:999;
-    display:flex; flex-direction:column; gap:10px; width:300px;
+    display:flex; flex-direction:column; gap:10px; width:380px;
   }
   .alert-toast{
     background:var(--panel); border:1px solid var(--danger); border-left:4px solid var(--danger);
@@ -213,12 +213,15 @@
     padding:12px 14px; animation:slideIn 0.25s ease-out;
   }
   @keyframes slideIn{ from{ transform:translateX(30px); opacity:0; } to{ transform:translateX(0); opacity:1; } }
-  .alert-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .alert-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:10px; }
   .alert-title{ font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:12.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--danger); }
-  .alert-close{ background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:13px; line-height:1; padding:2px 4px; }
+  .alert-close{ background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:13px; line-height:1; padding:2px 4px; flex-shrink:0; }
   .alert-close:hover{ color:var(--text); }
-  .alert-body{ font-size:12.5px; color:var(--text); margin-bottom:10px; }
-  .alert-body .mono{ color:var(--text-dim); font-size:11.5px; margin-top:3px; }
+  .alert-body{ margin-bottom:10px; max-height:220px; overflow-y:auto; }
+  .alert-table{ width:100%; border-collapse:collapse; font-size:12px; }
+  .alert-table th{ text-align:left; padding:5px 6px; font-family:'Barlow Condensed',sans-serif; font-size:10.5px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-faint); border-bottom:1px solid var(--border); font-weight:700; }
+  .alert-table td{ padding:6px 6px; border-bottom:1px solid rgba(255,255,255,0.04); color:var(--text); }
+  .alert-table tr:last-child td{ border-bottom:none; }
   .alert-actions{ display:flex; gap:8px; }
   .alert-download{
     background:var(--danger-bg); border:1px solid var(--danger); color:var(--danger);
@@ -646,63 +649,81 @@ function tickElapsed(){
   checkLongProcessAlerts();
 }
 
-// --- Long-process popup alert: fires once per batch when its elapsed time crosses 1:15 (1h 15m) ---
+// --- Long-process summary popup: shows ALL incomplete (under-process) batches whose
+// elapsed time has crossed 1:15 (1h 15m), as one summary table that live-updates. ---
 const ALERT_THRESHOLD_MS = (1*60 + 15) * 60 * 1000; // 1:15 = 75 min
-let alertedBatches = new Set();
+let popupDismissed = false;
+let lastAlertBatchSet = new Set();
 
 function checkLongProcessAlerts(){
-  const processList = rows.filter(r=>r.status==='process' && r.assignDT);
-  processList.forEach(r=>{
-    const ms = Date.now() - r.assignDT.getTime();
-    if(ms > ALERT_THRESHOLD_MS && !alertedBatches.has(r.batch)){
-      alertedBatches.add(r.batch);
-      showLongProcessPopup(r, ms);
-    }
-  });
-  // agar batch process se hat gaya (closed/removed), to usko re-fire ke liye reset kar do
-  const stillProcessing = new Set(processList.map(r=>r.batch));
-  Array.from(alertedBatches).forEach(b=>{ if(!stillProcessing.has(b)) alertedBatches.delete(b); });
+  const list = rows.filter(r=>r.status==='process' && r.assignDT && (Date.now() - r.assignDT.getTime()) > ALERT_THRESHOLD_MS);
+  const currentBatches = new Set(list.map(r=>r.batch));
+
+  // agar koi NAYA batch threshold cross kar chuka hai, to dismissed popup ko dobara khol do
+  const hasNewBatch = list.some(r=>!lastAlertBatchSet.has(r.batch));
+  if(hasNewBatch) popupDismissed = false;
+  lastAlertBatchSet = currentBatches;
+
+  renderLongProcessPopup(list);
 }
 
-function showLongProcessPopup(r, ms){
+function renderLongProcessPopup(list){
   const container = document.getElementById('alertContainer');
-  const toast = document.createElement('div');
-  toast.className = 'alert-toast';
-  toast.innerHTML = `
-    <div class="alert-head">
-      <span class="alert-title">⚠ 1:15+ Under Process</span>
-      <button class="alert-close" aria-label="Close">✕</button>
-    </div>
-    <div class="alert-body">
-      <div><b>${r.batch}</b> — ${r.picker}</div>
-      <div class="mono">Elapsed ${fmtDuration(ms)} · assigned ${fmtDT(r.assignDT)}</div>
-    </div>
-    <div class="alert-actions">
-      <button class="alert-download">⬇ Download</button>
+  if(list.length===0 || popupDismissed){ container.innerHTML=''; return; }
+
+  const rowsHtml = list.map(r=>{
+    const ms = Date.now() - r.assignDT.getTime();
+    return `<tr>
+      <td class="mono">${r.batch}</td>
+      <td class="num">${r.qty||'—'}</td>
+      <td>${r.picker}</td>
+      <td class="mono" style="color:var(--danger)">${fmtDuration(ms)}</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="alert-toast">
+      <div class="alert-head">
+        <span class="alert-title">⚠ Incomplete Picking — 1:15+ (${list.length})</span>
+        <button class="alert-close" id="alertCloseBtn" aria-label="Close">✕</button>
+      </div>
+      <div class="alert-body">
+        <table class="alert-table">
+          <thead><tr><th>Batch ID</th><th>Qty</th><th>Picker</th><th>Elapsed</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="alert-actions">
+        <button class="alert-download" id="alertDownloadBtn">⬇ Download</button>
+      </div>
     </div>`;
-  container.appendChild(toast);
-  toast.querySelector('.alert-close').addEventListener('click', ()=> toast.remove());
-  toast.querySelector('.alert-download').addEventListener('click', ()=> downloadLongProcessCSV(r));
 }
 
-function downloadLongProcessCSV(r){
-  const ms = Date.now() - r.assignDT.getTime();
-  const header = ['Batch','Date','Status','Channel','Pick List Type','Orders','Qty','Picker','Shift','Assign Time','Elapsed'];
+function downloadLongProcessCSV(){
+  const list = rows.filter(r=>r.status==='process' && r.assignDT && (Date.now() - r.assignDT.getTime()) > ALERT_THRESHOLD_MS);
+  if(list.length===0) return;
+  const header = ['Batch ID','Qty','Picker Name','Channel','Shift','Assign Time','Elapsed'];
   const esc = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
-  const lines = [header.map(esc).join(','), [
-    r.batch, r.dateKey, r.status, r.channel, r.pickListType, r.orders, r.qty,
-    r.picker, r.shift, fmtDT(r.assignDT), fmtDuration(ms)
-  ].map(esc).join(',')];
+  const lines = [header.map(esc).join(',')];
+  list.forEach(r=>{
+    const ms = Date.now() - r.assignDT.getTime();
+    lines.push([r.batch, r.qty, r.picker, r.channel, r.shift, fmtDT(r.assignDT), fmtDuration(ms)].map(esc).join(','));
+  });
   const blob = new Blob(["\ufeff" + lines.join('\n')], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `long-process-${r.batch}.csv`;
+  a.download = `incomplete-picking-1h15plus-${dateKey(new Date())}.csv`.replace(/\//g,'-');
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+document.getElementById('alertContainer').addEventListener('click', (e)=>{
+  if(e.target.id === 'alertCloseBtn'){ popupDismissed = true; renderLongProcessPopup([]); }
+  else if(e.target.id === 'alertDownloadBtn'){ downloadLongProcessCSV(); }
+});
 
 function renderOpen(){
   const list = getRows().filter(r=>r.status==='open');
