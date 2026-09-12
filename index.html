@@ -209,14 +209,14 @@
   }
 
   /* Incomplete picking (1:15+) alert table section */
-  #alertDownloadBtn{
+  #alertDownloadBtn, #packingAlertDownloadBtn{
     background:var(--danger-bg); border:1px solid var(--danger); color:var(--danger);
     padding:7px 14px; border-radius:4px; font-size:12px; cursor:pointer;
     font-family:'Barlow',sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;
   }
-  #alertDownloadBtn:hover{ background:var(--danger); color:var(--bg); }
-  #alertSection .section-head{ justify-content:space-between; }
-  #alertSection td.elapsed-danger{ color:var(--danger); font-weight:700; }
+  #alertDownloadBtn:hover, #packingAlertDownloadBtn:hover{ background:var(--danger); color:var(--bg); }
+  #alertSection .section-head, #packingAlertSection .section-head{ justify-content:space-between; }
+  td.elapsed-danger{ color:var(--danger); font-weight:700; }
 </style>
 </head>
 <body>
@@ -251,7 +251,7 @@
 
 <div id="errorBanner"></div>
 
-<section id="alertSection" data-view="picking" style="display:none;">
+<section id="alertSection" data-view="picking" data-self-managed data-has-data="0" style="display:none;">
   <div class="section-head">
     <h2 style="color:var(--danger);">⚠ Incomplete Picking — 1:15+ <span class="count" id="alertCount">(0)</span></h2>
     <button id="alertDownloadBtn" title="Download this list as CSV">⬇ Download</button>
@@ -310,7 +310,7 @@
   <div class="panel">
     <div class="scroll-y">
       <table>
-        <thead><tr><th>Batch</th><th>Picking Complete Time</th><th>Packing Start Date &amp; Time</th><th>Qty</th></tr></thead>
+        <thead><tr><th>Batch</th><th>Picking Complete Time</th><th>Packing Start Date &amp; Time</th><th>Scanner Name</th><th>Qty</th><th>Elapsed</th></tr></thead>
         <tbody id="packAssignPendingBody"></tbody>
       </table>
     </div>
@@ -326,6 +326,21 @@
       <table>
         <thead><tr><th>Batch</th><th>Scanner Name</th><th>Packing Start Date &amp; Time</th><th>Qty</th><th>Table No.</th><th>Elapsed</th></tr></thead>
         <tbody id="packingPendingBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="packingAlertSection" data-view="packing" data-self-managed data-has-data="0" style="display:none;">
+  <div class="section-head">
+    <h2 style="color:var(--danger);">⚠ Incomplete Packing — 1:15+ <span class="count" id="packingAlertCount">(0)</span></h2>
+    <button id="packingAlertDownloadBtn" title="Download this list as CSV">⬇ Download</button>
+  </div>
+  <div class="panel" style="border-color:var(--danger);">
+    <div class="scroll-y" style="max-height:280px;">
+      <table>
+        <thead><tr><th>Batch ID</th><th>Qty</th><th>Scanner Name</th><th>Packing Start Time</th><th>Table No.</th><th>Elapsed</th></tr></thead>
+        <tbody id="packingAlertBody"></tbody>
       </table>
     </div>
   </div>
@@ -697,6 +712,7 @@ function tickElapsed(){
     if(dotEl) dotEl.className = 'status-dot ' + (isLong ? 'danger' : 'process');
   });
   checkLongProcessAlerts();
+  checkIncompletePacking();
   renderPackingAssignPending();
   renderPackingPending();
   applyViewFilter();
@@ -717,9 +733,9 @@ function renderAlertTable(list){
   const section = document.getElementById('alertSection');
   const tbody = document.getElementById('alertBody');
   document.getElementById('alertCount').textContent = `(${list.length})`;
+  section.dataset.hasData = list.length ? '1' : '0';
 
-  if(list.length===0){ section.style.display = 'none'; tbody.innerHTML = ''; return; }
-  section.style.display = '';
+  if(list.length===0){ tbody.innerHTML = ''; return; }
 
   tbody.innerHTML = list.map(r=>{
     const ms = Date.now() - r.assignDT.getTime();
@@ -757,6 +773,61 @@ function downloadLongProcessCSV(){
 
 document.getElementById('alertDownloadBtn').addEventListener('click', downloadLongProcessCSV);
 
+// --- Incomplete Packing (1:15+) table: same idea as Incomplete Picking above, but for
+// batches whose Packing Start Date & Time has crossed 1:15 while Packing Status is still blank. ---
+function checkIncompletePacking(){
+  const list = rows.filter(r => (r.pickingStatusText === 'done' || r.completeDT) && !r.packingStatusRaw
+      && r.packingStartDT && (Date.now() - r.packingStartDT.getTime()) > ALERT_THRESHOLD_MS)
+    .sort((a,b)=> b.packingStartDT - a.packingStartDT);
+  renderPackingAlertTable(list);
+}
+
+function renderPackingAlertTable(list){
+  const section = document.getElementById('packingAlertSection');
+  const tbody = document.getElementById('packingAlertBody');
+  document.getElementById('packingAlertCount').textContent = `(${list.length})`;
+  section.dataset.hasData = list.length ? '1' : '0';
+
+  if(list.length===0){ tbody.innerHTML = ''; return; }
+
+  tbody.innerHTML = list.map(r=>{
+    const ms = Date.now() - r.packingStartDT.getTime();
+    return `<tr>
+      <td class="num">${r.batch}</td>
+      <td class="num">${r.qty||'—'}</td>
+      <td>${r.scannerName}</td>
+      <td class="mono" style="color:var(--text-dim)">${fmtDT(r.packingStartDT)}</td>
+      <td>${r.tableNo}</td>
+      <td class="num elapsed-danger">${fmtDuration(ms)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function downloadIncompletePackingCSV(){
+  const list = rows.filter(r => (r.pickingStatusText === 'done' || r.completeDT) && !r.packingStatusRaw
+      && r.packingStartDT && (Date.now() - r.packingStartDT.getTime()) > ALERT_THRESHOLD_MS)
+    .sort((a,b)=> b.packingStartDT - a.packingStartDT);
+  if(list.length===0) return;
+  const header = ['Batch ID','Qty','Scanner Name','Packing Start Time','Table No.','Elapsed'];
+  const esc = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const lines = [header.map(esc).join(',')];
+  list.forEach(r=>{
+    const ms = Date.now() - r.packingStartDT.getTime();
+    lines.push([r.batch, r.qty, r.scannerName, fmtDT(r.packingStartDT), r.tableNo, fmtDuration(ms)].map(esc).join(','));
+  });
+  const blob = new Blob(["\ufeff" + lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `incomplete-packing-1h15plus-${dateKey(new Date())}.csv`.replace(/\//g,'-');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('packingAlertDownloadBtn').addEventListener('click', downloadIncompletePackingCSV);
+
 // Packing Assign Pending: picking is complete but packing hasn't been started/assigned yet,
 // and it has been more than 30 minutes since Picking Complete Time.
 const PACKING_ASSIGN_THRESHOLD_MS = 30 * 60 * 1000;
@@ -767,13 +838,18 @@ function renderPackingAssignPending(){
     .sort((a,b)=> a.completeDT - b.completeDT);
   document.getElementById('packAssignPendingCount').textContent = `(${list.length})`;
   const tbody = document.getElementById('packAssignPendingBody');
-  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="4" class="empty">Koi batch pending nahi hai</td></tr>`; return; }
-  tbody.innerHTML = list.map(r=>`<tr>
+  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty">Koi batch pending nahi hai</td></tr>`; return; }
+  tbody.innerHTML = list.map(r=>{
+    const ms = now - r.completeDT.getTime();
+    return `<tr>
     <td class="num">${r.batch}</td>
     <td class="mono" style="color:var(--text-dim)">${fmtDT(r.completeDT)}</td>
     <td class="mono" style="color:var(--text-dim)">${r.packingStartDT ? fmtDT(r.packingStartDT) : '—'}</td>
+    <td>${r.scannerName}</td>
     <td class="num">${r.qty||'—'}</td>
-  </tr>`).join('');
+    <td class="num elapsed-danger">${fmtDuration(ms)}</td>
+  </tr>`;
+  }).join('');
 }
 
 // Packing Pending: picking is done, packing has (or hasn't yet) started, but Packing Status is still blank.
@@ -843,7 +919,13 @@ document.getElementById('globalDateFilter').addEventListener('change', ()=>{ clo
 function applyViewFilter(){
   const v = document.getElementById('viewFilter').value;
   document.querySelectorAll('[data-view]').forEach(el=>{
-    el.style.display = (!v || el.getAttribute('data-view')===v) ? '' : 'none';
+    const viewMatches = !v || el.getAttribute('data-view')===v;
+    if(!viewMatches){ el.style.display = 'none'; return; }
+    if(el.hasAttribute('data-self-managed')){
+      el.style.display = (el.dataset.hasData === '0') ? 'none' : '';
+    } else {
+      el.style.display = '';
+    }
   });
 }
 document.getElementById('viewFilter').addEventListener('change', applyViewFilter);
