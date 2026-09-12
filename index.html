@@ -106,6 +106,12 @@
     font-family:'Barlow',sans-serif; font-weight:600;
   }
   #channelFilter:hover{ border-color:var(--process); }
+  #viewFilter{
+    background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:8px 12px; border-radius:4px; font-size:12px; cursor:pointer;
+    font-family:'Barlow',sans-serif; font-weight:600;
+  }
+  #viewFilter:hover{ border-color:var(--process); }
   #downloadBtn{
     background:var(--panel); border:1px solid var(--border); color:var(--closed);
     padding:8px 14px; border-radius:4px; font-size:12px; cursor:pointer;
@@ -228,6 +234,11 @@
     <select id="monthFilter" title="Filter dashboard by month"><option value="">All months</option></select>
     <select id="globalDateFilter" title="Filter dashboard by date"><option value="">All dates</option></select>
     <select id="channelFilter" title="Filter dashboard by channel"><option value="">All channels</option></select>
+    <select id="viewFilter" title="Picking ya Packing view dekhein">
+      <option value="">All</option>
+      <option value="picking">Picking</option>
+      <option value="packing">Packing</option>
+    </select>
     <button id="downloadBtn" title="Download current view as CSV">⬇ Download</button>
     <div class="sync-pill"><span class="dot-live"></span><span id="syncText">syncing…</span></div>
     <button id="refreshBtn">↻ Refresh</button>
@@ -240,7 +251,7 @@
 
 <div id="errorBanner"></div>
 
-<section id="alertSection" style="display:none;">
+<section id="alertSection" data-view="picking" style="display:none;">
   <div class="section-head">
     <h2 style="color:var(--danger);">⚠ Incomplete Picking — 1:15+ <span class="count" id="alertCount">(0)</span></h2>
     <button id="alertDownloadBtn" title="Download this list as CSV">⬇ Download</button>
@@ -255,14 +266,14 @@
   </div>
 </section>
 
-<section class="kpis" id="kpiStrip">
+<section class="kpis" id="kpiStrip" data-view="picking">
   <div class="kpi k-total"><div class="label">Total Batches Created</div><div class="value mono" id="kpiTotal">–</div><div class="foot" id="kpiTotalFoot">all dates</div></div>
   <div class="kpi k-open"><div class="label">Open (Not Started)</div><div class="value mono" id="kpiOpen">–</div><div class="foot">assign time pending</div></div>
   <div class="kpi k-process"><div class="label">Under Process</div><div class="value mono" id="kpiProcess">–</div><div class="foot">picking in progress</div></div>
   <div class="kpi k-closed"><div class="label">Closed</div><div class="value mono" id="kpiClosed">–</div><div class="foot">picking complete</div></div>
 </section>
 
-<section>
+<section data-view="picking">
   <div class="section-head">
     <h2>Date-wise Summary</h2>
   </div>
@@ -280,7 +291,7 @@
   </div>
 </section>
 
-<section>
+<section data-view="picking">
   <div class="section-head">
     <h2>Under Process <span class="count" id="processCount">(0)</span></h2>
   </div>
@@ -292,7 +303,7 @@
   </div>
 </section>
 
-<section>
+<section data-view="packing">
   <div class="section-head">
     <h2>Packing Assign Pending <span class="count" id="packAssignPendingCount">(0)</span></h2>
   </div>
@@ -306,21 +317,21 @@
   </div>
 </section>
 
-<section>
+<section data-view="packing">
   <div class="section-head">
     <h2>Packing Pending <span class="count" id="packingPendingCount">(0)</span></h2>
   </div>
   <div class="panel">
     <div class="scroll-y">
       <table>
-        <thead><tr><th>Batch</th><th>Scanner Name</th><th>Packing Start Date &amp; Time</th><th>Qty</th><th>Table No.</th></tr></thead>
+        <thead><tr><th>Batch</th><th>Scanner Name</th><th>Packing Start Date &amp; Time</th><th>Qty</th><th>Table No.</th><th>Elapsed</th></tr></thead>
         <tbody id="packingPendingBody"></tbody>
       </table>
     </div>
   </div>
 </section>
 
-<section>
+<section data-view="picking">
   <div class="section-head">
     <h2>Open — Not Yet Assigned <span class="count" id="openCount">(0)</span></h2>
   </div>
@@ -334,7 +345,7 @@
   </div>
 </section>
 
-<section>
+<section data-view="picking">
   <div class="section-head">
     <h2>Closed — Batch-wise Closing Time <span class="count" id="closedCount">(0)</span></h2>
   </div>
@@ -605,6 +616,7 @@ function render(){
   renderPackingPending();
   renderOpen();
   renderClosed();
+  applyViewFilter();
 }
 
 function renderKPIs(){
@@ -686,6 +698,8 @@ function tickElapsed(){
   });
   checkLongProcessAlerts();
   renderPackingAssignPending();
+  renderPackingPending();
+  applyViewFilter();
 }
 
 // --- Incomplete picking (1:15+) table: permanent in-page section listing ALL
@@ -764,18 +778,23 @@ function renderPackingAssignPending(){
 
 // Packing Pending: picking is done, packing has (or hasn't yet) started, but Packing Status is still blank.
 function renderPackingPending(){
+  const now = Date.now();
   const list = rows.filter(r => (r.pickingStatusText === 'done' || r.completeDT) && !r.packingStatusRaw)
     .sort((a,b)=>(b.packingStartDT||0)-(a.packingStartDT||0));
   document.getElementById('packingPendingCount').textContent = `(${list.length})`;
   const tbody = document.getElementById('packingPendingBody');
-  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="5" class="empty">Koi batch packing pending nahi hai</td></tr>`; return; }
-  tbody.innerHTML = list.map(r=>`<tr>
+  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty">Koi batch packing pending nahi hai</td></tr>`; return; }
+  tbody.innerHTML = list.map(r=>{
+    const elapsed = r.packingStartDT ? fmtDuration(now - r.packingStartDT.getTime()) : '—';
+    return `<tr>
     <td class="num">${r.batch}</td>
     <td>${r.scannerName}</td>
     <td class="mono" style="color:var(--text-dim)">${r.packingStartDT ? fmtDT(r.packingStartDT) : '—'}</td>
     <td class="num">${r.qty||'—'}</td>
     <td>${r.tableNo}</td>
-  </tr>`).join('');
+    <td class="num elapsed ok">${elapsed}</td>
+  </tr>`;
+  }).join('');
 }
 
 function renderOpen(){
@@ -821,6 +840,14 @@ document.getElementById('loadMoreClosed').addEventListener('click', ()=>{ closed
 document.getElementById('refreshBtn').addEventListener('click', loadData);
 document.getElementById('monthFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; populateGlobalDateFilter(); render(); });
 document.getElementById('globalDateFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
+function applyViewFilter(){
+  const v = document.getElementById('viewFilter').value;
+  document.querySelectorAll('[data-view]').forEach(el=>{
+    el.style.display = (!v || el.getAttribute('data-view')===v) ? '' : 'none';
+  });
+}
+document.getElementById('viewFilter').addEventListener('change', applyViewFilter);
+
 document.getElementById('channelFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
 document.getElementById('globalSearch').addEventListener('input', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
 document.getElementById('downloadBtn').addEventListener('click', downloadCSV);
