@@ -294,6 +294,34 @@
 
 <section>
   <div class="section-head">
+    <h2>Packing Assign Pending <span class="count" id="packAssignPendingCount">(0)</span></h2>
+  </div>
+  <div class="panel">
+    <div class="scroll-y">
+      <table>
+        <thead><tr><th>Batch</th><th>Picking Complete Time</th><th>Packing Start Date &amp; Time</th><th>Qty</th></tr></thead>
+        <tbody id="packAssignPendingBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>Packing Pending <span class="count" id="packingPendingCount">(0)</span></h2>
+  </div>
+  <div class="panel">
+    <div class="scroll-y">
+      <table>
+        <thead><tr><th>Batch</th><th>Scanner Name</th><th>Packing Start Date &amp; Time</th><th>Qty</th><th>Table No.</th></tr></thead>
+        <tbody id="packingPendingBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
     <h2>Open — Not Yet Assigned <span class="count" id="openCount">(0)</span></h2>
   </div>
   <div class="panel">
@@ -412,6 +440,10 @@ async function loadData(){
       else if(col.complete===undefined && l.includes('pickingcomplete')) col.complete = i;
       else if(col.pickingStatus===undefined && l.includes('pickingstatus')) col.pickingStatus = i;
       else if(col.shift===undefined && l==='shift') col.shift = i;
+      else if(col.packingStart===undefined && l.includes('packingstart')) col.packingStart = i;
+      else if(col.packingStatus===undefined && l.includes('packingstatus')) col.packingStatus = i;
+      else if(col.scanner===undefined && l.includes('scanner')) col.scanner = i;
+      else if(col.tableNo===undefined && (l.includes('tableno') || l.includes('tablenumber') || l==='table')) col.tableNo = i;
     });
     // Fallback to the previous fixed positions only if a header couldn't be matched
     // (e.g. sheet has no header row this fetch) so the dashboard still renders something.
@@ -427,9 +459,15 @@ async function loadData(){
       const completeRaw = cellText(c[col.complete]);
       const sheetDateRaw = cellText(c[col.date]);
       const pickerRaw = cellText(c[col.picker]);
+      const packingStartRaw = cellText(c[col.packingStart]);
+      const packingStatusRaw = cellText(c[col.packingStatus]).trim();
+      const pickingStatusRaw = cellText(c[col.pickingStatus]).trim();
+      const scannerName = cellText(c[col.scanner]);
+      const tableNo = cellText(c[col.tableNo]);
 
       const assignDT = parseDT(assignRaw);
       const completeDT = parseDT(completeRaw);
+      const packingStartDT = parseDT(packingStartRaw);
       let createDT = assignDT || parseDT(sheetDateRaw);
       if(!createDT) continue; // no date in the tracker for this batch — don't show it on the dashboard
 
@@ -449,7 +487,12 @@ async function loadData(){
         assignDT, completeDT, createDT,
         dateKey: createDT ? dateKey(createDT) : 'Unknown',
         monthKey: createDT ? monthKey(createDT) : null,
-        status
+        status,
+        packingStartDT,
+        packingStatusRaw,
+        pickingStatusText: pickingStatusRaw.toLowerCase(),
+        scannerName: scannerName || '—',
+        tableNo: tableNo || '—'
       });
     }
     rows = out;
@@ -558,6 +601,8 @@ function render(){
   renderKPIs();
   renderDateSummary();
   renderProcessBoard();
+  renderPackingAssignPending();
+  renderPackingPending();
   renderOpen();
   renderClosed();
 }
@@ -640,6 +685,7 @@ function tickElapsed(){
     if(dotEl) dotEl.className = 'status-dot ' + (isLong ? 'danger' : 'process');
   });
   checkLongProcessAlerts();
+  renderPackingAssignPending();
 }
 
 // --- Incomplete picking (1:15+) table: permanent in-page section listing ALL
@@ -696,6 +742,41 @@ function downloadLongProcessCSV(){
 }
 
 document.getElementById('alertDownloadBtn').addEventListener('click', downloadLongProcessCSV);
+
+// Packing Assign Pending: picking is complete but packing hasn't been started/assigned yet,
+// and it has been more than 30 minutes since Picking Complete Time.
+const PACKING_ASSIGN_THRESHOLD_MS = 30 * 60 * 1000;
+
+function renderPackingAssignPending(){
+  const now = Date.now();
+  const list = rows.filter(r => r.completeDT && !r.packingStartDT && (now - r.completeDT.getTime()) > PACKING_ASSIGN_THRESHOLD_MS)
+    .sort((a,b)=> a.completeDT - b.completeDT);
+  document.getElementById('packAssignPendingCount').textContent = `(${list.length})`;
+  const tbody = document.getElementById('packAssignPendingBody');
+  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="4" class="empty">Koi batch pending nahi hai</td></tr>`; return; }
+  tbody.innerHTML = list.map(r=>`<tr>
+    <td class="num">${r.batch}</td>
+    <td class="mono" style="color:var(--text-dim)">${fmtDT(r.completeDT)}</td>
+    <td class="mono" style="color:var(--text-dim)">${r.packingStartDT ? fmtDT(r.packingStartDT) : '—'}</td>
+    <td class="num">${r.qty||'—'}</td>
+  </tr>`).join('');
+}
+
+// Packing Pending: picking is done, packing has (or hasn't yet) started, but Packing Status is still blank.
+function renderPackingPending(){
+  const list = rows.filter(r => (r.pickingStatusText === 'done' || r.completeDT) && !r.packingStatusRaw)
+    .sort((a,b)=>(b.packingStartDT||0)-(a.packingStartDT||0));
+  document.getElementById('packingPendingCount').textContent = `(${list.length})`;
+  const tbody = document.getElementById('packingPendingBody');
+  if(list.length===0){ tbody.innerHTML = `<tr><td colspan="5" class="empty">Koi batch packing pending nahi hai</td></tr>`; return; }
+  tbody.innerHTML = list.map(r=>`<tr>
+    <td class="num">${r.batch}</td>
+    <td>${r.scannerName}</td>
+    <td class="mono" style="color:var(--text-dim)">${r.packingStartDT ? fmtDT(r.packingStartDT) : '—'}</td>
+    <td class="num">${r.qty||'—'}</td>
+    <td>${r.tableNo}</td>
+  </tr>`).join('');
+}
 
 function renderOpen(){
   const list = getRows().filter(r=>r.status==='open');
