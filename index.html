@@ -112,6 +112,12 @@
     font-family:'Barlow',sans-serif; font-weight:600;
   }
   #viewFilter:hover{ border-color:var(--process); }
+  #clientFilter{
+    background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:8px 12px; border-radius:4px; font-size:12px; cursor:pointer;
+    font-family:'Barlow',sans-serif; font-weight:700;
+  }
+  #clientFilter:hover{ border-color:var(--process); }
   #downloadBtn{
     background:var(--panel); border:1px solid var(--border); color:var(--closed);
     padding:8px 14px; border-radius:4px; font-size:12px; cursor:pointer;
@@ -226,11 +232,12 @@
     <div class="brand-mark"></div>
     <div>
       <h1>Picker Ops Board</h1>
-      <p>Pilgrim B2C &middot; batch picking status, live from sheet</p>
+      <p id="brandSub">Pilgrim B2C &middot; batch picking status, live from sheet</p>
     </div>
   </div>
   <div class="header-right">
     <input type="text" id="globalSearch" placeholder="🔎 Search batch / picker…">
+    <select id="clientFilter" title="Client select karein"></select>
     <select id="monthFilter" title="Filter dashboard by month"><option value="">All months</option></select>
     <select id="globalDateFilter" title="Filter dashboard by date"><option value="">All dates</option></select>
     <select id="channelFilter" title="Filter dashboard by channel"><option value="">All channels</option></select>
@@ -376,9 +383,14 @@
 </section>
 
 <script>
-const SHEET_ID = '1I4zt-rpsts9DX-HEwm8IjXflbOQ7LUhjLEf8zPvnsoc';
-const GID = '0';
-const GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${GID}`;
+const CLIENTS = [
+  { id: 'pilgrim', name: 'Pilgrim',  sheetId: '1I4zt-rpsts9DX-HEwm8IjXflbOQ7LUhjLEf8zPvnsoc', gid: '0' },
+  { id: 'tss',     name: 'TSS',      sheetId: '1o1GGkoplaqg10Y80Il4Xac86j1no1dqFRjviAma68eg', gid: '0' }
+];
+let currentClient = CLIENTS[0];
+function gvizUrl(client){
+  return `https://docs.google.com/spreadsheets/d/${client.sheetId}/gviz/tq?tqx=out:json&gid=${client.gid}`;
+}
 
 let rows = []; // parsed batch objects
 let closedRenderLimit = 60;
@@ -440,7 +452,7 @@ async function loadData(){
   const syncText = document.getElementById('syncText');
   try{
     syncText.textContent = 'syncing…';
-    const res = await fetch(GVIZ_URL + '&_=' + Date.now());
+    const res = await fetch(gvizUrl(currentClient) + '&_=' + Date.now());
     if(!res.ok) throw new Error('HTTP ' + res.status);
     let text = await res.text();
     const jsonStart = text.indexOf('{');
@@ -933,6 +945,28 @@ document.getElementById('viewFilter').addEventListener('change', applyViewFilter
 document.getElementById('channelFilter').addEventListener('change', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
 document.getElementById('globalSearch').addEventListener('input', ()=>{ closedRenderLimit = CLOSED_PAGE; render(); });
 document.getElementById('downloadBtn').addEventListener('click', downloadCSV);
+
+// --- Client switcher: each client is a separate Google Sheet, same column format. ---
+const clientFilterEl = document.getElementById('clientFilter');
+clientFilterEl.innerHTML = CLIENTS.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+clientFilterEl.value = currentClient.id;
+
+function switchClient(clientId){
+  const client = CLIENTS.find(c => c.id === clientId);
+  if(!client || client === currentClient) return;
+  currentClient = client;
+  document.getElementById('brandSub').textContent = `${client.name} · batch picking status, live from sheet`;
+  // Reset filters/state so nothing from the old client's sheet leaks into the new view
+  rows = [];
+  closedRenderLimit = CLOSED_PAGE;
+  didInitialDateSelect = false;
+  document.getElementById('monthFilter').value = '';
+  document.getElementById('globalDateFilter').value = '';
+  document.getElementById('channelFilter').value = '';
+  document.getElementById('globalSearch').value = '';
+  loadData();
+}
+clientFilterEl.addEventListener('change', (e)=> switchClient(e.target.value));
 
 function tickClock(){
   const now = new Date();
