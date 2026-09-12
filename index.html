@@ -541,9 +541,10 @@ async function loadData(){
     populateChannelFilter();
     if(!didInitialDateSelect){
       didInitialDateSelect = true;
-      const sel = document.getElementById('globalDateFilter');
-      const tk = dateKey(new Date());
-      if(Array.from(sel.options).some(o=>o.value===tk)) sel.value = tk;
+      const monthSel = document.getElementById('monthFilter');
+      const mk = monthKey(new Date());
+      if(Array.from(monthSel.options).some(o=>o.value===mk)) monthSel.value = mk;
+      populateGlobalDateFilter(); // date options ko selected month ke hisaab se rescope karo
     }
     render();
   }catch(err){
